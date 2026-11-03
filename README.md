@@ -1,6 +1,6 @@
 # lin_ad
 
-Ein eigener Verzeichnisdienst in Go mit Server-API und CLI für Linux und Windows. Dies ist eine erste Entwicklungsversion: Benutzer, Gruppen, Mitgliedschaften und Anmeldung an der API funktionieren. Windows-Anmeldung, Linux PAM/NSS, LDAP/Kerberos, Gerätebeitritt, Passwortwechsel, weitere Administratoren, Hochverfügbarkeit und eine grafische Verwaltung sind noch nicht implementiert. Keine AD-Kompatibilität.
+Ein eigener Verzeichnisdienst in Go mit Server-API und CLI für Linux und Windows. Dies ist eine erste Entwicklungsversion: Benutzer, Gruppen, Mitgliedschaften und Anmeldung an der API funktionieren. Eine Webverwaltung, Passwortänderungen und Kontensperren sind enthalten. Windows-Anmeldung, Linux PAM/NSS, LDAP/Kerberos, Gerätebeitritt, weitere Administratoren und Hochverfügbarkeit sind noch nicht implementiert. Keine AD-Kompatibilität.
 
 ## Bauen und testen
 
@@ -31,6 +31,14 @@ HTTP ist standardmäßig nur an den Loopback-Port des Hosts gebunden. Für Netzw
 
 Alternativ lokal `LINAD_ADMIN_PASSWORD` setzen und `go run ./cmd/server` starten. Standard: `127.0.0.1:8080`, Daten: `data/directory.json`. `LINAD_DATA` und `LINAD_LISTEN` überschreiben diese Werte. `GET /healthz` liefert `{"status":"ok"}`.
 
+## Webverwaltung
+
+Nach dem Start die Serveradresse im Browser öffnen: lokal `http://127.0.0.1:8080/`, im Netzwerk ausschließlich die eingerichtete HTTPS-Adresse. Als `admin` anmelden. Die Oberfläche bietet Benutzer- und Gruppenlisten, Anlegen/Löschen, Mitgliedschaften, Sperren/Entsperren und Passwortzurücksetzen. Normale Benutzer können ihr eigenes Passwort ändern. Der Bootstrap-Administrator kann weder gesperrt noch gelöscht werden.
+
+Sitzungstoken bleiben ausschließlich im Arbeitsspeicher des geöffneten Tabs; ein Neuladen der Seite erfordert eine neue Anmeldung. Passwörter oder Token werden nicht in Local Storage geschrieben. Der Server liefert die Oberfläche selbst aus; kein Node.js oder separater Frontend-Dienst ist nötig. Bestehende Datenbestände werden weiterverwendet, vorhandene Konten sind standardmäßig aktiv.
+
+Eine Kontensperre oder Passwortänderung beendet alle Sitzungen des Kontos sofort. Entsperren stellt alte Sitzungen nicht wieder her. Eine Passwortänderung ist erst nach erfolgreichem Speichern wirksam. Die Gruppe bleibt beim Sperren eines Benutzers unverändert.
+
 ## Client
 
 Linux: `dist/linad-client-linux-amd64`; Windows: `dist/linad-client-windows-amd64.exe`. Die folgenden Beispiele verwenden Linux-Shell-Syntax. In PowerShell Umgebungsvariablen mit `$env:LINAD_PASSWORD` bzw. `$env:LINAD_TOKEN` setzen.
@@ -51,6 +59,10 @@ logout
 users
 user-add alice           # liest neues Passwort aus LINAD_PASSWORD
 user-delete alice
+user-disable alice
+user-enable alice
+user-password alice     # neues Passwort aus LINAD_NEW_PASSWORD
+password-change         # bisheriges aus LINAD_PASSWORD, neues aus LINAD_NEW_PASSWORD
 groups
 group-add engineering
 group-delete engineering
@@ -58,7 +70,7 @@ member-add engineering alice
 member-delete engineering alice
 ```
 
-Nur `admin` verwaltet Benutzer und Gruppen. Normale Benutzer können sich anmelden, `me` und `logout` verwenden. Benutzerlöschung entfernt Mitgliedschaften und macht bestehende Token unbrauchbar. Sitzungen laufen nach acht Stunden ab; Neustart meldet alle Benutzer ab. Passwort-Hashes verwenden PBKDF2-HMAC-SHA256 mit individuellem Salt und 600.000 Iterationen. Login ist global auf 30 Versuche pro Minute begrenzt; für öffentlichen Betrieb sind zusätzliche Schutzmaßnahmen am Reverse-Proxy und eine Sicherheitsprüfung nötig.
+Nur `admin` verwaltet Benutzer und Gruppen. Normale Benutzer können sich anmelden, `me`, `logout` und `password-change` verwenden. Nach Passwortänderungen neu anmelden und `LINAD_TOKEN` ersetzen. `LINAD_NEW_PASSWORD` ebenfalls sicher setzen und nach Gebrauch entfernen. Benutzerlöschung entfernt Mitgliedschaften und macht bestehende Token unbrauchbar. Sitzungen laufen nach acht Stunden ab; Neustart meldet alle Benutzer ab. Passwort-Hashes verwenden PBKDF2-HMAC-SHA256 mit individuellem Salt und 600.000 Iterationen. Login ist global auf 30 Versuche pro Minute begrenzt; für öffentlichen Betrieb sind zusätzliche Schutzmaßnahmen am Reverse-Proxy und eine Sicherheitsprüfung nötig.
 
 ## API
 
@@ -71,8 +83,30 @@ JSON unter `/v1`, Authentifizierung mit `Authorization: Bearer TOKEN`:
 | POST | /v1/logout | Sitzung beenden |
 | GET / POST | /v1/users | Liste / `{"name":"alice","password":"…"}` |
 | DELETE | /v1/users/{name} | Benutzer löschen |
+| PATCH | /v1/users/{name} | `{"disabled":true}` / `{"disabled":false}` (Admin) |
+| POST | /v1/users/{name}/password | `{"password":"…"}` (Admin setzt Passwort) |
+| POST | /v1/password | `{"current_password":"…","new_password":"…"}` (eigenes Passwort) |
 | GET / POST | /v1/groups | Liste / `{"name":"engineering"}` |
 | DELETE | /v1/groups/{name} | Gruppe löschen |
 | PUT / DELETE | /v1/groups/{group}/members/{user} | Mitglied hinzufügen / entfernen |
 
 Namen: Kleinbuchstabe als erstes Zeichen, danach Kleinbuchstaben, Ziffern, Punkt, Unterstrich oder Bindestrich; höchstens 64 Zeichen. Neue Passwörter mindestens 16 Zeichen. Unbekannte JSON-Felder werden abgelehnt.
+
+## Aktualisierung einer bestehenden Installation
+
+```sh
+git pull --ff-only
+go test ./...
+sh scripts/build.sh
+docker compose --env-file .env up -d --build
+```
+
+In `.env` neben `compose.yaml` den absoluten Pfad setzen, z. B. `LINAD_ADMIN_SECRET_FILE=/etc/linad/admin-password`. Bei Nutzung von `sudo` wird ein vorheriges `export` normalerweise nicht übernommen; die explizite `.env`-Datei vermeidet das. Das bestehende Volume beibehalten und vor Updates sichern. `docker compose down -v` löscht den Datenbestand und ist kein Update-Schritt. Der neue Container liefert nach dem Update die Weboberfläche an `/` aus.
+
+Optionaler Browser-Funktionstest nach dem Build (Python-Paket `playwright` und `/usr/bin/chromium` erforderlich):
+
+```sh
+python3 scripts/test-web.py
+```
+
+Der Test startet einen temporären Server auf Port 18082 mit eigener Datenbank und prüft Anmeldung, Benutzer/Gruppen, Mitgliedschaften, Kontensperre, Passwortzurücksetzen, eigenen Passwortwechsel und die mobile Anmeldeseite. Produktivdaten werden nicht verwendet.

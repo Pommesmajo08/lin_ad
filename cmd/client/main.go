@@ -32,7 +32,7 @@ func run() error {
 	}
 	a := flag.Args()
 	if len(a) == 0 {
-		return fmt.Errorf("commands: login NAME, me, logout, users, user-add NAME, user-delete NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER")
+		return fmt.Errorf("commands: login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER")
 	}
 	method, path := "GET", ""
 	var body any
@@ -40,6 +40,15 @@ func run() error {
 	case a[0] == "login" && len(a) == 2:
 		method, path = "POST", "/v1/login"
 		body = map[string]string{"name": a[1], "password": os.Getenv("LINAD_PASSWORD")}
+	case a[0] == "password-change" && len(a) == 1:
+		method, path = "POST", "/v1/password"
+		body = map[string]string{"current_password": os.Getenv("LINAD_PASSWORD"), "new_password": os.Getenv("LINAD_NEW_PASSWORD")}
+	case a[0] == "user-password" && len(a) == 2:
+		method, path = "POST", "/v1/users/"+url.PathEscape(a[1])+"/password"
+		body = map[string]string{"password": os.Getenv("LINAD_NEW_PASSWORD")}
+	case (a[0] == "user-disable" || a[0] == "user-enable") && len(a) == 2:
+		method, path = "PATCH", "/v1/users/"+url.PathEscape(a[1])
+		body = map[string]bool{"disabled": a[0] == "user-disable"}
 	case a[0] == "me" && len(a) == 1:
 		path = "/v1/me"
 	case a[0] == "logout" && len(a) == 1:

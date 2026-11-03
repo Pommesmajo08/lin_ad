@@ -13,16 +13,18 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 )
 
 type User struct {
-	Name  string `json:"name"`
-	Admin bool   `json:"admin"`
-	Salt  string `json:"salt,omitempty"`
-	Hash  string `json:"hash,omitempty"`
+	Name     string `json:"name"`
+	Admin    bool   `json:"admin"`
+	Disabled bool   `json:"disabled"`
+	Salt     string `json:"salt,omitempty"`
+	Hash     string `json:"hash,omitempty"`
 }
 type State struct {
 	Users  map[string]User     `json:"users"`
@@ -128,7 +130,12 @@ func (s *Server) Handler() http.Handler {
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { reply(w, 200, map[string]string{"status": "ok"}) })
 	m.HandleFunc("POST /v1/login", s.login)
 	m.HandleFunc("/v1/", s.authorized)
-	return m
+	web := webHandler()
+	m.Handle("GET /{$}", web)
+	m.Handle("GET /app.js", web)
+	m.Handle("GET /style.css", web)
+	m.Handle("GET /favicon.svg", web)
+	return securityHeaders(m)
 }
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	var body struct {
@@ -160,7 +167,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		u = s.dummy
 	}
 	hash := derive(body.Password, u.Salt)
-	if subtle.ConstantTimeCompare([]byte(hash), []byte(u.Hash)) != 1 || !ok {
+	if subtle.ConstantTimeCompare([]byte(hash), []byte(u.Hash)) != 1 || !ok || u.Disabled {
 		fail(w, 401, "invalid credentials")
 		return
 	}
@@ -195,7 +202,7 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 	key := tokenKey(strings.TrimPrefix(auth, "Bearer "))
 	session, ok := s.sessions[key]
 	u, exists := s.state.Users[session.User]
-	if !ok || !exists || time.Now().After(session.Expires) {
+	if !ok || !exists || u.Disabled || time.Now().After(session.Expires) {
 		delete(s.sessions, key)
 		fail(w, 401, "session expired or invalid")
 		return
@@ -209,6 +216,10 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/v1/logout" && r.Method == "POST" {
 		delete(s.sessions, key)
 		reply(w, 200, map[string]bool{"ok": true})
+		return
+	}
+	if r.URL.Path == "/v1/password" && r.Method == "POST" {
+		s.changePassword(w, r, u)
 		return
 	}
 	if !u.Admin {
@@ -233,6 +244,7 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 				v.Salt = ""
 				users = append(users, v)
 			}
+			sort.Slice(users, func(i, j int) bool { return users[i].Name < users[j].Name })
 			reply(w, 200, users)
 			return
 		}
@@ -253,6 +265,47 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			next.Users[b.Name] = passwordUser(b.Name, b.Password, false)
+		} else if len(parts) == 3 && r.Method == "PATCH" {
+			target, ok := next.Users[parts[2]]
+			if !ok {
+				fail(w, 404, "user not found")
+				return
+			}
+			var body struct {
+				Disabled *bool `json:"disabled"`
+			}
+			if !decode(w, r, &body) {
+				return
+			}
+			if body.Disabled == nil {
+				fail(w, 400, "disabled field required")
+				return
+			}
+			if target.Name == "admin" && *body.Disabled {
+				fail(w, 400, "bootstrap administrator cannot be disabled")
+				return
+			}
+			target.Disabled = *body.Disabled
+			next.Users[target.Name] = target
+		} else if len(parts) == 4 && parts[3] == "password" && r.Method == "POST" {
+			target, ok := next.Users[parts[2]]
+			if !ok {
+				fail(w, 404, "user not found")
+				return
+			}
+			var body struct {
+				Password string `json:"password"`
+			}
+			if !decode(w, r, &body) {
+				return
+			}
+			if len(body.Password) < 16 {
+				fail(w, 400, "password must contain at least 16 characters")
+				return
+			}
+			updated := passwordUser(target.Name, body.Password, target.Admin)
+			updated.Disabled = target.Disabled
+			next.Users[target.Name] = updated
 		} else if len(parts) == 3 && r.Method == "DELETE" {
 			if parts[2] == "admin" {
 				fail(w, 400, "bootstrap administrator cannot be deleted")
@@ -336,12 +389,61 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.state = next
-	if r.Method == "DELETE" && len(parts) == 3 && parts[1] == "users" {
-		for key, session := range s.sessions {
-			if session.User == parts[2] {
-				delete(s.sessions, key)
-			}
+	if parts[1] == "users" && len(parts) >= 3 {
+		s.revokeSessions(parts[2])
+	}
+	reply(w, 200, map[string]bool{"ok": true})
+}
+
+// Called only with the server mutex held.
+func (s *Server) revokeSessions(name string) {
+	for key, session := range s.sessions {
+		if session.User == name {
+			delete(s.sessions, key)
 		}
 	}
+}
+func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, u User) {
+	var body struct {
+		Current string `json:"current_password"`
+		New     string `json:"new_password"`
+	}
+	if !decode(w, r, &body) {
+		return
+	}
+	now := time.Now()
+	attempts := s.attempts["password"][:0]
+	for _, t := range s.attempts["password"] {
+		if now.Sub(t) < time.Minute {
+			attempts = append(attempts, t)
+		}
+	}
+	if len(attempts) >= 30 {
+		s.attempts["password"] = attempts
+		w.Header().Set("Retry-After", "60")
+		fail(w, 429, "password change rate limit exceeded")
+		return
+	}
+	s.attempts["password"] = append(attempts, now)
+	if len(body.New) < 16 {
+		fail(w, 400, "password must contain at least 16 characters")
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(derive(body.Current, u.Salt)), []byte(u.Hash)) != 1 {
+		fail(w, 403, "current password is incorrect")
+		return
+	}
+	data, _ := json.Marshal(s.state)
+	var next State
+	_ = json.Unmarshal(data, &next)
+	updated := passwordUser(u.Name, body.New, u.Admin)
+	updated.Disabled = u.Disabled
+	next.Users[u.Name] = updated
+	if err := s.save(next); err != nil {
+		fail(w, 500, "directory persistence failed")
+		return
+	}
+	s.state = next
+	s.revokeSessions(u.Name)
 	reply(w, 200, map[string]bool{"ok": true})
 }
