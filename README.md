@@ -217,7 +217,7 @@ Der Test verwendet Port 18081, prüft Administratorpflicht, Freigaben, Enrollmen
 
 ## Linux-sudo-Update
 
-Für sudo-Rechte sowohl Server als auch das Linux-Provisioner-Paket aktualisieren. Auf bereits eingerichteten Linux-Geräten genügt danach `sudo sh scripts/install-linux.sh`; die Konfiguration bleibt erhalten. Nur eine neue Binärdatei zu kopieren installiert den zusätzlich benötigten PAM-Dienst nicht. Siehe [sudo und Update-Anleitung](docs/linux-provisioning.md#administratoren-und-sudo).
+Für sudo-Rechte sowohl Server als auch das Linux-Provisioner-Paket aktualisieren. Auf bereits eingerichteten Linux-Geräten genügt danach `sudo sh scripts/install-linux.sh`; die Konfiguration bleibt erhalten. Nur eine neue Binärdatei zu kopieren installiert die zusätzlich benötigten PAM-Prüfungen nicht. Siehe [sudo und Update-Anleitung](docs/linux-provisioning.md#administratoren-und-sudo).
 
 Freigegebene Administratoren verwenden ihr Linad-Passwort für `sudo` und `sudo -i`. Rollenentzug, Kontensperre und Gerätewiderruf werden bei neuen sudo-Aufrufen online geprüft. Bereits laufende Root-Shells werden nicht beendet. Normale Benutzer bekommen keine Root-Rechte. Die Maschinen-Passwortprüfung erlaubt bis zu 120 Versuche pro Minute und Gerät; die öffentliche Web-Anmeldung behält ihr eigenes Limit von 30 Versuchen pro Minute.
 
@@ -228,3 +228,13 @@ Unter **Automatisierung** können Administratoren Linux-Geräten Systeminfo-, Pa
 Server und Linux-Provisioner-Paket aktualisieren; auf bestehenden Geräten `sudo sh scripts/install-linux.sh` erneut als bisheriger lokaler Administrator/Root ausführen. Kein neuer Enrollment-Token nötig. Alte Agenten ohne Job-Worker führen keine Aufträge aus. Windows-Ausführung und freie Shell-Skripte sind noch nicht enthalten.
 
 Die vollständige Beschreibung, CLI/API und Wiederanlaufregeln stehen unter [docs/jobs.md](docs/jobs.md). Für Paketupdates bleiben APT-Verifikation und bestehende Konfigurationen erhalten. Es gibt keinen automatischen Neustart und keinen blinden Wiederholungsversuch nach unklarem Ausgang. Aktive Updates dürfen bei einem normalen Agent-Neustart fertig laufen, weshalb das Update des Agenten länger dauern kann.
+
+### Ubuntu 26.04 / sudo-rs testen
+
+Die sudo-Anbindung unterstützt sowohl klassisches sudo als auch sudo-rs ohne `pam_service`-/`pam_login_service`-Defaults. Der Integrationstest kann auf Ubuntu mit sudo-rs ausgeführt werden:
+
+```sh
+LINAD_TEST_BASE_IMAGE=ubuntu:26.04 LINAD_TEST_SUDO_PACKAGE=sudo-rs LINAD_TEST_IMAGE=linad-pam-ubuntu-rs:local sh scripts/test-linux.sh
+```
+
+Die Tests prüfen echte `sudo`-/`sudo -i`-Aufrufe, sofortigen Rollenentzug, unveränderten lokalen sudo-Zugriff, die Reparatur einer alten Linad-Regel und die Wiederherstellung der PAM-Dateien bei Deinstallation.

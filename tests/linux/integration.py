@@ -72,6 +72,7 @@ with tempfile.TemporaryDirectory() as tmp:
         run([str(ROOT/'dist/linad-linux-amd64'),'enroll','--server',base,'--device-id',device['id']],
             input=enrollment['enrollment_token']+'\n',ok=False)
         assert not CONFIG.exists()
+        sudo_pam_before={name:(Path('/etc/pam.d/'+name).read_bytes() if Path('/etc/pam.d/'+name).exists() else None) for name in ['sudo','sudo-i']}
         install = ['sh',str(ROOT/'scripts/install-linux.sh'),'--server',base,
                    '--device-id',device['id'],'--ca-file',cert,'--no-start']
         run(install,input=enrollment['enrollment_token']+'\n')
@@ -111,6 +112,9 @@ with tempfile.TemporaryDirectory() as tmp:
         run(['useradd','--create-home','localadmin'])
         run(['chpasswd'],input='localadmin:'+local_password+'\n')
         pam('localadmin',local_password)
+        run(['usermod','-aG','sudo','localadmin'])
+        local_sudo=run(['runuser','-u','localadmin','--','sudo','-S','-p','','id','-u'],input=local_password+'\n')
+        assert local_sudo.stdout.strip()=='0'
         shell = run(['runuser','-u','localadmin','--','su','-',alice,'-c','id -u'], input=user_password+'\n')
         assert shell.stdout.strip() == str(users['alice']['unix_id'])
         # Real sudo uses a dedicated password-authenticated PAM service.
@@ -124,13 +128,28 @@ with tempfile.TemporaryDirectory() as tmp:
                 assert result.stdout.strip() == '0'
         sudo(alice,user_password,ok=False)
         api('PATCH','/v1/users/alice',{'admin':True})
+        # Repair a legacy generated rule even when sudo-rs rejects its Defaults.
+        legacy=Path('/etc/sudoers.d/linad-linux')
+        legacy.write_text('# Managed by linad-linux; device '+device['id']+'\nDefaults:'+alice+' pam_service="linad-sudo", pam_login_service="linad-sudo", authenticate, !runaspw\n'+alice+' ALL=(ALL:ALL) ALL\n')
+        legacy.chmod(0o440)
         run([AGENT,'sync'])
         policy = Path('/etc/sudoers.d/linad-linux')
         assert stat.S_IMODE(policy.stat().st_mode) == 0o440
         assert 'NOPASSWD' not in policy.read_text()
+        assert 'pam_service' not in policy.read_text() and 'pam_login_service' not in policy.read_text()
         sudo(alice,user_password)
         sudo(alice,user_password,login_shell=True)
         sudo(alice,'wrong-password',ok=False)
+        # A package reset of the explicit hooks cannot leave a stale Linad grant.
+        run([AGENT,'pam-remove-sudo'])
+        api('PATCH','/v1/users/alice',{'admin':False})
+        sudo(alice,user_password,ok=False)  # Common-PAM defence remains active.
+        api('PATCH','/v1/users/alice',{'admin':True})
+        run([AGENT,'sync'],ok=False)
+        assert not policy.exists()
+        run([AGENT,'pam-install-sudo'])
+        run([AGENT,'sync'])
+        sudo(alice,user_password)
         api('PATCH','/v1/users/alice',{'admin':False})
         assert alice in policy.read_text()  # No sync: stale local grant still exists.
         sudo(alice,user_password,ok=False)
@@ -287,10 +306,15 @@ with tempfile.TemporaryDirectory() as tmp:
         sudo(alice,new_password,ok=False)
         pam(alice,account_only=True,ok=False)
         pam('localadmin',local_password)
+        local_sudo=run(['runuser','-u','localadmin','--','sudo','-k','-S','-p','','id','-u'],input=local_password+'\n')
+        assert local_sudo.stdout.strip()=='0'
         # Uninstall works offline and preserves home data and recovery files.
         run(['sh',str(ROOT/'scripts/uninstall-linux.sh')])
         assert Path(entry.pw_dir).is_dir() and CONFIG.exists()
         assert not Path('/etc/sudoers.d/linad-linux').exists()
+        for name, original in sudo_pam_before.items():
+            path=Path('/etc/pam.d/'+name)
+            assert path.read_bytes()==original if original is not None else not path.exists()
         assert 'linad-linux' not in Path('/etc/pam.d/common-auth').read_text()
         pam('localadmin',local_password)
         pam(alice,account_only=True,ok=False)

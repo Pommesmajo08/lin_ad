@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,7 +18,7 @@ const sudoPolicyPath = "/etc/sudoers.d/linad-linux"
 
 var sudoInclude = regexp.MustCompile(`(?m)^[ \t]*[@#]includedir[ \t]+/etc/sudoers\.d[ \t]*$`)
 
-func sudoPolicy(deviceID string, accounts map[string]directory.UnixAccount) string {
+func sudoPolicy(deviceID string, accounts map[string]directory.UnixAccount, supportsRunasPW bool) string {
 	names := []string{}
 	for login, a := range accounts {
 		if a.Admin {
@@ -31,10 +32,14 @@ func sudoPolicy(deviceID string, accounts map[string]directory.UnixAccount) stri
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Managed by linad-linux; device %s\n", deviceID)
 	for _, name := range names {
-		// A dedicated PAM service checks the current server role on every invocation,
+		// Explicit PAM hooks check the current server role on every invocation,
 		// including sudo -i. Never cache authentication or use a target/root password.
-		fmt.Fprintf(&b, "Defaults:%s pam_service=\"linad-sudo\", pam_login_service=\"linad-sudo\", timestamp_timeout=0, authenticate, !rootpw, !targetpw, !runaspw\n", name)
-		fmt.Fprintf(&b, "%s ALL=(ALL:ALL) ALL\n", name)
+		fmt.Fprintf(&b, "Defaults:%s timestamp_timeout=0, !rootpw, !targetpw", name)
+		if supportsRunasPW {
+			b.WriteString(", !runaspw")
+		}
+		b.WriteByte('\n')
+		fmt.Fprintf(&b, "%s ALL=(ALL:ALL) PASSWD: ALL\n", name)
 	}
 	return b.String()
 }
@@ -54,16 +59,34 @@ func configureSudo(ctx context.Context, deviceID string, accounts map[string]dir
 			return errors.New("refusing to replace an unmanaged sudo policy")
 		}
 	}
-	policy := sudoPolicy(deviceID, accounts)
+	needsPolicy := false
+	for _, account := range accounts {
+		if account.Admin {
+			needsPolicy = true
+			break
+		}
+	}
+	supportsRunasPW := false
+	if needsPolicy {
+		supportsRunasPW, err = probeRunasPW(ctx)
+		if err != nil {
+			return err
+		}
+	}
+	policy := sudoPolicy(deviceID, accounts, supportsRunasPW)
 	if policy == "" {
 		if old != nil {
 			return os.Remove(sudoPolicyPath)
 		}
 		return nil
 	}
-	pam, err := os.ReadFile("/etc/pam.d/linad-sudo")
-	if err != nil || !strings.HasPrefix(string(pam), "# Managed by linad-linux\n") {
-		return errors.New("sudo PAM service missing; rerun the updated installer")
+	if !sudoPAMReady() {
+		if old != nil {
+			if err = os.Remove(sudoPolicyPath); err != nil {
+				return err
+			}
+		}
+		return errors.New("sudo PAM protection missing; Linad sudo grant removed; rerun the updated installer")
 	}
 	base, err := os.ReadFile("/etc/sudoers")
 	if err != nil {
@@ -74,9 +97,6 @@ func configureSudo(ctx context.Context, deviceID string, accounts map[string]dir
 	}
 	if string(old) == policy {
 		return nil
-	}
-	if err = run(ctx, "/usr/sbin/visudo", "--check", "--quiet"); err != nil {
-		return err
 	}
 	f, err := os.CreateTemp("/etc/sudoers.d", ".linad-*")
 	if err != nil {
@@ -99,5 +119,46 @@ func configureSudo(ctx context.Context, deviceID string, accounts map[string]dir
 	if err = run(ctx, "/usr/sbin/visudo", "--check", "--quiet", "--file", f.Name()); err != nil {
 		return err
 	}
-	return os.Rename(f.Name(), sudoPolicyPath)
+	if err = os.Rename(f.Name(), sudoPolicyPath); err != nil {
+		return err
+	}
+	if err = run(ctx, "/usr/sbin/visudo", "--check", "--quiet"); err != nil {
+		if old == nil {
+			if rollback := os.Remove(sudoPolicyPath); rollback != nil {
+				return fmt.Errorf("sudo validation failed: %v; rollback failed: %w", err, rollback)
+			}
+		} else if rollback := atomicPAM(sudoPolicyPath, old, 0440, 0); rollback != nil {
+			return fmt.Errorf("sudo validation failed: %v; rollback failed: %w", err, rollback)
+		}
+		return err
+	}
+	return nil
+}
+
+// sudo-rs rejects runaspw, while classic sudo may need it explicitly unset.
+// Only a confirmed unsupported-setting diagnostic is treated as absence.
+func probeRunasPW(ctx context.Context) (bool, error) {
+	f, err := os.CreateTemp("/etc/sudoers.d", ".linad-probe-*")
+	if err != nil {
+		return false, err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.WriteString("Defaults !runaspw\n"); err != nil {
+		f.Close()
+		return false, err
+	}
+	if err = f.Close(); err != nil {
+		return false, err
+	}
+	cmd := exec.CommandContext(ctx, "/usr/sbin/visudo", "--check", "--quiet", "--file", f.Name())
+	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C"}
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		return true, nil
+	}
+	message := string(output)
+	if strings.Contains(message, "unknown setting") && strings.Contains(message, "runaspw") {
+		return false, nil
+	}
+	return false, fmt.Errorf("sudo capability check failed: %w: %s", err, strings.TrimSpace(message))
 }

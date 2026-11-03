@@ -71,11 +71,17 @@ func run() error {
 	}
 	// Local accounts, including root, must work even if linad or the network is down.
 	login := os.Getenv("PAM_USER")
-	if mode == "pam-account" && !strings.HasPrefix(login, "linad_") {
+	if (mode == "pam-account" || mode == "pam-sudo-check") && !strings.HasPrefix(login, "linad_") {
 		return nil
 	}
 	if (mode == "pam-auth" || mode == "pam-sudo-auth") && !strings.HasPrefix(login, "linad_") {
 		return errors.New("not a linad account")
+	}
+	if mode == "pam-install-sudo" {
+		return linuxclient.ConfigureSudoPAM(true)
+	}
+	if mode == "pam-remove-sudo" {
+		return linuxclient.ConfigureSudoPAM(false)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -122,7 +128,7 @@ func run() error {
 		return linuxclient.Sync(ctx, c, *state)
 	case "deactivate":
 		return linuxclient.Provision(ctx, c.Config.DeviceID, *state, nil)
-	case "pam-auth", "pam-account", "pam-sudo-auth", "pam-sudo-account":
+	case "pam-auth", "pam-account", "pam-sudo-auth", "pam-sudo-account", "pam-sudo-check":
 		password := ""
 		if mode == "pam-auth" || mode == "pam-sudo-auth" {
 			data, err := io.ReadAll(io.LimitReader(os.Stdin, 513))
@@ -131,7 +137,7 @@ func run() error {
 			}
 			password = strings.TrimRight(string(data), "\x00")
 		}
-		if err = linuxclient.PAMCheck(ctx, c, *state, login, password, (mode == "pam-auth" || mode == "pam-sudo-auth"), strings.HasPrefix(mode, "pam-sudo-")); err != nil {
+		if err = linuxclient.PAMCheck(ctx, c, *state, login, password, (mode == "pam-auth" || mode == "pam-sudo-auth"), sudoPAMPurpose(mode, os.Getenv("PAM_SERVICE"))); err != nil {
 			return errors.New("linad authentication or device access denied")
 		}
 		return nil
@@ -162,4 +168,14 @@ func run() error {
 	default:
 		return errors.New("unknown command")
 	}
+}
+
+func sudoPAMPurpose(mode, service string) bool {
+	if strings.HasPrefix(mode, "pam-sudo-") {
+		return true
+	}
+	if mode != "pam-account" {
+		return false
+	}
+	return service == "sudo" || service == "sudo-i" || service == "sudo-rs" || service == "sudo-rs-i"
 }

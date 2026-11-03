@@ -37,6 +37,7 @@ if [ ! -e /etc/linad-linux/client.json ]; then
 fi
 if [ -e /etc/pam.d/linad-sudo ] && ! head -n 1 /etc/pam.d/linad-sudo | grep -qxF '# Managed by linad-linux'; then echo 'Existing sudo PAM service is not managed by linad.' >&2; exit 1; fi
 install -o root -g root -m 0644 "$linad_root/packaging/linux/linad-sudo.pam-service" /etc/pam.d/linad-sudo
+/usr/local/libexec/linad-linux pam-install-sudo
 # Successful sync is required before modifying any active PAM configuration.
 /usr/local/libexec/linad-linux sync
 if [ -f /usr/share/pam-configs/linad ] && ! cmp -s /usr/share/pam-configs/linad "$linad_root/packaging/linux/linad.pam-profile"; then echo 'Existing PAM profile differs; review it before replacing.' >&2; exit 1; fi
