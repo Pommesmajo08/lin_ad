@@ -25,11 +25,13 @@ function message(text, error = false) {
   $('message').hidden = !text;
 }
 function signedOut() {
+  $('run-script-dialog').close(); $('run-script-source').value = ''; $('run-script-info').textContent = '';
+  syncScriptFields();
   hideEnrollment(); $('device-policies').replaceChildren(); $('device-policies').hidden = true;
   token = ''; profile = null;
   $('workspace').hidden = true; $('session').hidden = true;
   $('admin-panel').hidden = true; $('login-panel').hidden = !guiConnected;
-  $('users').replaceChildren(); $('groups').replaceChildren(); $('reset-user').replaceChildren(); $('devices').replaceChildren(); $('my-groups').replaceChildren(); $('jobs').replaceChildren(); $('job-runs').replaceChildren(); $('job-devices').replaceChildren(); $('job-form').reset(); jobDeviceCache = [];
+  $('users').replaceChildren(); $('groups').replaceChildren(); $('reset-user').replaceChildren(); $('devices').replaceChildren(); $('my-groups').replaceChildren(); $('jobs').replaceChildren(); $('job-runs').replaceChildren(); $('job-devices').replaceChildren(); $('job-form').reset(); jobDeviceCache = []; syncScriptFields();
   document.querySelectorAll('input[type=password]').forEach(input => { input.value = ''; });
 }
 async function api(method, path, body) {
@@ -288,7 +290,7 @@ function renderDevicePolicies(devices, users, groups) {
 }
 
 
-const jobKindLabels = { 'system-info': 'Systeminformationen', 'apt-refresh': 'Paketlisten aktualisieren', 'apt-upgrade': 'Paketupdates installieren' };
+const jobKindLabels = { 'system-info': 'Systeminformationen', 'apt-refresh': 'Paketlisten aktualisieren', 'apt-upgrade': 'Paketupdates installieren', 'custom-script': 'Eigenes Root-Skript' };
 const jobStatusLabels = { queued: 'Wartet', running: 'Läuft', succeeded: 'Erfolgreich', failed: 'Fehlgeschlagen', unknown: 'Unklar', cancelled: 'Vor Start abgebrochen' };
 function jobDeviceName(id) { return jobDeviceCache.find(device => device.id === id)?.name || id; }
 function jobDate(value) { return value ? new Date(value).toLocaleString() : '—'; }
@@ -311,6 +313,21 @@ async function refreshJobs() {
     jobDeviceCache.forEach(device => { const option = element('option', device.name); option.value = device.id; option.selected = job.device_ids.includes(device.id); select.append(option); });
     select.required = true; label.append(select); const save = element('button', 'Gerätezuordnung speichern'); save.type = 'submit'; form.append(label, save);
     form.addEventListener('submit', event => { event.preventDefault(); action(async () => { await api('PATCH', `/v1/jobs/${pathName(job.id)}`, { device_ids: [...select.selectedOptions].map(option => option.value) }); await refreshJobs(); message('Gerätezuordnung gespeichert.'); }); }); card.append(form);
+    if (job.kind === 'custom-script') {
+      card.append(element('p', `${job.interpreter} · SHA-256: ${job.script_sha256}`, 'muted fine'));
+      const editorArea = element('div');
+      card.append(button('Skript anzeigen / bearbeiten', async () => {
+        if (editorArea.childNodes.length) { editorArea.replaceChildren(); return; }
+        const detail = await api('GET', `/v1/jobs/${pathName(job.id)}`);
+        const editor = element('form', undefined, 'script-editor');
+        const label = element('label', 'Interpreter'); const interpreter = element('select');
+        ['bash', 'sh', 'python3'].forEach(value => { const option = element('option', value); option.value = value; option.selected = value === detail.interpreter; interpreter.append(option); }); label.append(interpreter);
+        const scriptLabel = element('label', 'Skript für künftige Läufe'); const source = element('textarea'); source.rows = 12; source.spellcheck = false; source.value = detail.script; scriptLabel.append(source);
+        const save = element('button', 'Skript speichern'); save.type = 'submit';
+        editor.append(label, scriptLabel, element('p', 'Ausführung als Root. Bereits eingereihte und laufende Jobs behalten ihre bisherige Skriptversion.', 'script-warning'), save);
+        editor.addEventListener('submit', event => { event.preventDefault(); action(async () => { validateScriptSource(source.value); await api('PATCH', `/v1/jobs/${pathName(job.id)}`, { script: source.value, interpreter: interpreter.value }); await refreshJobs(); message('Skript für neue Läufe gespeichert.'); }); }); editorArea.append(editor);
+      })); card.append(editorArea);
+    }
     const schedule = element('form', undefined, 'inline');
     const startLabel = element('label', 'Nächste Startzeit (lokal)'); const startInput = element('input'); startInput.type = 'datetime-local';
     if (job.next_run_at) { const date = new Date(job.next_run_at); const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000); startInput.value = local.toISOString().slice(0, 16); }
@@ -335,6 +352,13 @@ async function refreshJobRuns() {
     if (run.exit_code !== null) result.append(element('div', `Exit-Code: ${run.exit_code}`, 'fine'));
     if (run.output) { const details = element('details'); details.dataset.runId = run.id; details.open = openLogs.has(run.id); details.append(element('summary', 'Ausgabe anzeigen'), element('pre', run.output)); result.append(details); }
     const controls = element('td');
+    if (run.kind === 'custom-script') controls.append(button('Skriptversion', async () => {
+      const detail = await api('GET', `/v1/job-runs/${pathName(run.id)}`);
+      $('run-script-title').textContent = `Skriptversion · ${run.job_name}`;
+      $('run-script-info').textContent = `${detail.interpreter} · SHA-256: ${detail.script_sha256}`;
+      $('run-script-source').value = detail.script;
+      $('run-script-dialog').showModal();
+    }));
     if (run.status === 'queued') controls.append(button('Abbrechen', async () => { await api('POST', `/v1/job-runs/${pathName(run.id)}/cancel`); await refreshJobRuns(); message('Wartender Lauf abgebrochen.'); }, 'danger'));
     if (run.status === 'unknown' && !run.resolved) controls.append(button('Nach Prüfung freigeben', async () => { if (!confirm('Gerät prüfen: Es darf kein alter Paketprozess mehr laufen. Die Freigabe erlaubt weitere Jobs und wiederholt diesen Lauf nicht. Fortfahren?')) return; await api('POST', `/v1/job-runs/${pathName(run.id)}/resolve`); await refreshJobRuns(); message('Gerät für weitere Jobs freigegeben.'); }));
     row.append(name, status, date, result, controls); $('job-runs').append(row);
@@ -344,8 +368,10 @@ async function refreshJobRuns() {
 onForm('job-form', async (data, form) => {
   const selected = [...form.elements.devices.selectedOptions].map(option => option.value);
   const start = data.start_at ? new Date(data.start_at).toISOString() : null;
-  await api('POST', '/v1/jobs', { name: data.name, kind: data.kind, device_ids: selected, start_at: start, interval_minutes: Number(data.interval_minutes), enabled: data.enabled === 'on' });
-  form.reset(); await refreshJobs(); message('Job angelegt.');
+  const body = { name: data.name, kind: data.kind, device_ids: selected, start_at: start, interval_minutes: Number(data.interval_minutes), enabled: data.enabled === 'on' };
+  if (data.kind === 'custom-script') { validateScriptSource(data.script); body.script = data.script; body.interpreter = data.interpreter; }
+  await api('POST', '/v1/jobs', body);
+  form.reset(); syncScriptFields(); await refreshJobs(); message('Job angelegt.');
 });
 $('jobs-refresh').addEventListener('click', () => action(async () => { await refreshJobs(); message('Jobstatus aktualisiert.'); }));
 setInterval(() => {
@@ -353,3 +379,22 @@ setInterval(() => {
     refreshJobRuns().catch(error => { if (!token) message(error.message, true); });
   }
 }, 15000);
+
+function syncScriptFields() {
+  const custom = $('job-form').elements.kind.value === 'custom-script';
+  $('job-script-fields').hidden = !custom;
+  $('job-form').elements.script.required = custom;
+}
+function validateScriptSource(source) {
+  if (!source.trim() || source.includes('\0') || new TextEncoder().encode(source.replace(/\r\n/g, '\n')).length > 16384) throw new Error('Das Skript muss gültigen Text ohne NUL enthalten und darf höchstens 16 KiB groß sein.');
+}
+$('job-form').elements.kind.addEventListener('change', syncScriptFields);
+$('job-script-file').addEventListener('change', event => action(async () => {
+  const file = event.target.files[0]; if (!file) return;
+  if (file.size > 16384) throw new Error('Die Skriptdatei darf höchstens 16 KiB groß sein.');
+  const source = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()); validateScriptSource(source);
+  $('job-form').elements.script.value = source;
+  if (file.name.toLowerCase().endsWith('.py')) $('job-form').elements.interpreter.value = 'python3';
+}));
+$('run-script-close').addEventListener('click', () => { $('run-script-dialog').close(); $('run-script-source').value = ''; });
+syncScriptFields();

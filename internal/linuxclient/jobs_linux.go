@@ -71,7 +71,7 @@ type jobCommand func(context.Context, string, []string, io.Writer) error
 
 func executeJob(ctx context.Context, kind string, command jobCommand) (int, string) {
 	output := &limitedLog{}
-	if !directory.ValidJobKind(kind) {
+	if !directory.ValidJobKind(kind) || kind == "custom-script" {
 		return 1, "Unsupported job kind; no command executed."
 	}
 	if kind == "system-info" {
@@ -105,7 +105,11 @@ func exitCode(err error) int {
 	return 1
 }
 func runJobCommand(ctx context.Context, program string, args []string, w io.Writer) error {
+	return runJobProcess(ctx, program, args, w, "", nil, false)
+}
+func runJobProcess(ctx context.Context, program string, args []string, w io.Writer, dir string, extraEnv []string, cleanChildren bool) error {
 	cmd := exec.CommandContext(ctx, program, args...)
+	cmd.Dir = dir
 	cmd.Stdout = w
 	cmd.Stderr = w
 	cmd.Env = []string{"PATH=/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL=C", "DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=l", "UCF_FORCE_CONFFOLD=1"}
@@ -115,6 +119,7 @@ func runJobCommand(ctx context.Context, program string, args []string, w io.Writ
 			cmd.Env = append(cmd.Env, name+"="+value)
 		}
 	}
+	cmd.Env = append(cmd.Env, extraEnv...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error {
 		if cmd.Process == nil {
@@ -124,6 +129,9 @@ func runJobCommand(ctx context.Context, program string, args []string, w io.Writ
 	}
 	cmd.WaitDelay = 5 * time.Second
 	err := cmd.Run()
+	if cleanChildren && cmd.Process != nil {
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
 	if ctx.Err() != nil && cmd.Process != nil {
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		return ctx.Err()
@@ -247,7 +255,11 @@ func ProcessJobOnce(ctx context.Context, c *Client, path string) (bool, error) {
 	} else {
 		// On service stop, drain an accepted update rather than killing dpkg mid-write.
 		jobCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Minute)
-		code, output := executeJob(jobCtx, run.Kind, runJobCommand)
+		command := jobCommand(runJobCommand)
+		if run.Kind == "custom-script" {
+			command = runScriptCommand(*run)
+		}
+		code, output := executeRun(jobCtx, *run, command)
 		cancel()
 		ledger.Current.ExitCode = code
 		ledger.Current.Output = output

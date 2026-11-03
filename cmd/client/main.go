@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 func main() {
@@ -34,7 +35,7 @@ func run() error {
 	}
 	a := flag.Args()
 	if len(a) == 0 {
-		return fmt.Errorf("commands: jobs, job-runs, job-create NAME KIND DEVICE..., job-schedule NAME KIND START_RFC3339 INTERVAL_MINUTES DEVICE..., job-run ID, job-pause ID, job-resume ID, job-delete ID, job-cancel RUN_ID, job-resolve RUN_ID, user-admin NAME, user-standard NAME, my-groups, login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER, devices, device-register [NAME], device-heartbeat ID, device-delete ID, device-access ID [USER...], device-access-groups ID [GROUP...], device-access-all ID, device-enrollment ID, device-revoke ID")
+		return fmt.Errorf("commands: job-script NAME INTERPRETER FILE DEVICE..., job-script-schedule NAME INTERPRETER FILE START_RFC3339 INTERVAL DEVICE..., job-script-set JOB_ID INTERPRETER FILE, job-show ID, job-run-show RUN_ID, jobs, job-runs, job-create NAME KIND DEVICE..., job-schedule NAME KIND START_RFC3339 INTERVAL_MINUTES DEVICE..., job-run ID, job-pause ID, job-resume ID, job-delete ID, job-cancel RUN_ID, job-resolve RUN_ID, user-admin NAME, user-standard NAME, my-groups, login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER, devices, device-register [NAME], device-heartbeat ID, device-delete ID, device-access ID [USER...], device-access-groups ID [GROUP...], device-access-all ID, device-enrollment ID, device-revoke ID")
 	}
 	method, path := "GET", ""
 	var body any
@@ -84,6 +85,40 @@ func run() error {
 		method, path = "POST", "/v1/devices/"+url.PathEscape(a[1])+"/heartbeat"
 	case a[0] == "device-delete" && len(a) == 2:
 		method, path = "DELETE", "/v1/devices/"+url.PathEscape(a[1])
+	case (a[0] == "job-show" || a[0] == "job-run-show") && len(a) == 2:
+		path = "/v1/jobs/" + url.PathEscape(a[1])
+		if a[0] == "job-run-show" {
+			path = "/v1/job-runs/" + url.PathEscape(a[1])
+		}
+	case a[0] == "job-script" && len(a) >= 5:
+		script, err := readJobScript(a[3])
+		if err != nil {
+			return err
+		}
+		method, path = "POST", "/v1/jobs"
+		body = map[string]any{"name": a[1], "kind": "custom-script", "interpreter": a[2], "script": script, "device_ids": a[4:], "enabled": true}
+	case a[0] == "job-script-schedule" && len(a) >= 7:
+		script, err := readJobScript(a[3])
+		if err != nil {
+			return err
+		}
+		start, err := time.Parse(time.RFC3339, a[4])
+		if err != nil {
+			return err
+		}
+		interval, err := strconv.Atoi(a[5])
+		if err != nil {
+			return err
+		}
+		method, path = "POST", "/v1/jobs"
+		body = map[string]any{"name": a[1], "kind": "custom-script", "interpreter": a[2], "script": script, "device_ids": a[6:], "start_at": start, "interval_minutes": interval, "enabled": true}
+	case a[0] == "job-script-set" && len(a) == 4:
+		script, err := readJobScript(a[3])
+		if err != nil {
+			return err
+		}
+		method, path = "PATCH", "/v1/jobs/"+url.PathEscape(a[1])
+		body = map[string]string{"interpreter": a[2], "script": script}
 	case a[0] == "jobs" && len(a) == 1:
 		path = "/v1/jobs"
 	case a[0] == "job-runs" && len(a) == 1:
@@ -177,4 +212,20 @@ func run() error {
 	}
 	fmt.Print(string(b))
 	return nil
+}
+
+func readJobScript(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, 16385))
+	if err != nil {
+		return "", err
+	}
+	if len(data) > 16384 || !utf8.Valid(data) || strings.ContainsRune(string(data), 0) || strings.TrimSpace(string(data)) == "" {
+		return "", fmt.Errorf("script must be UTF-8 text without NUL, 1–16384 bytes")
+	}
+	return string(data), nil
 }

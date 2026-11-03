@@ -1,6 +1,6 @@
 # Automatisierung und geplante Linux-Jobs
 
-Administratoren erstellen Jobs in der Webverwaltung unter **Automatisierung** oder mit dem CLI-Client. Normale Benutzer dürfen weder Jobs anlegen noch deren Ausgaben lesen. Der Server ordnet Ausführungen Geräten zu; der Root-Dienst auf jedem Linux-Gerät holt sie ab. Windows-Jobs und frei eingebbare Shell-Skripte sind in dieser Version nicht enthalten.
+Administratoren erstellen Jobs in der Webverwaltung unter **Automatisierung** oder mit dem CLI-Client. Normale Benutzer dürfen weder Jobs anlegen noch deren Ausgaben lesen. Der Server ordnet Ausführungen Geräten zu; der Root-Dienst auf jedem Linux-Gerät holt sie ab. Windows-Jobs sind in dieser Version nicht enthalten. Eigene Linux-Skripte werden unten beschrieben.
 
 ## Jobtypen
 
@@ -9,6 +9,7 @@ Administratoren erstellen Jobs in der Webverwaltung unter **Automatisierung** od
 | `system-info` | Hostname, Betriebssystem, Architektur und `/etc/os-release` zurückmelden |
 | `apt-refresh` | Paketlisten mit `apt-get update` aktualisieren |
 | `apt-upgrade` | Erst Paketlisten aktualisieren, anschließend `apt-get -y upgrade` |
+| `custom-script` | Eigenes Bash-, sh- oder Python-3-Skript als Root ausführen |
 
 Die Paketaktionen sind für Debian/Ubuntu vorgesehen und laufen als Root. APT-Signaturen und Zertifikatsprüfung bleiben aktiviert. Paketupdates behalten bestehende Konfigurationsdateien über die üblichen dpkg-Optionen, entfernen keine Pakete per `autoremove` und lösen keinen automatischen Neustart aus. Paket-Skripte können Dienste neu starten. Ein fehlgeschlagenes `apt-get update` verhindert den anschließenden Upgrade-Schritt. Paketmanager-Locks werden respektiert; bei konkurrierenden Paketoperationen kann ein Lauf fehlschlagen.
 
@@ -80,10 +81,12 @@ Benutzer-API, nur Administratoren:
 | Methode | Pfad | Inhalt |
 |---|---|---|
 | GET / POST | `/v1/jobs` | Vorlagen lesen / erstellen |
-| PATCH | `/v1/jobs/{id}` | `enabled`, `device_ids`, `start_at`, `interval_minutes` ändern |
+| GET | `/v1/jobs/{id}` | Vorlage einschließlich Skript lesen |
+| PATCH | `/v1/jobs/{id}` | `enabled`, `device_ids`, `start_at`, `interval_minutes`, `script`, `interpreter` ändern |
 | POST | `/v1/jobs/{id}/run` | Sofortige Einreihung |
 | DELETE | `/v1/jobs/{id}` | Vorlage löschen, wartende Läufe abbrechen |
 | GET | `/v1/job-runs` | Historie; Filter `device_id` und `job_id` optional |
+| GET | `/v1/job-runs/{id}` | Lauf einschließlich damaliger Skriptversion lesen |
 | POST | `/v1/job-runs/{id}/cancel` | Nur einen wartenden Lauf abbrechen |
 | POST | `/v1/job-runs/{id}/resolve` | Unklaren Lauf nach Prüfung freigeben |
 
@@ -98,4 +101,53 @@ Maschinen-API mit `Authorization: Device DEVICE_ID.SECRET`:
 - POST `/v1/machine/jobs/claim`: `{ "request_id": "64 zufällige Hex-Zeichen" }`; diese ID vor dem Aufruf lokal dauerhaft speichern und bei verlorenem Ergebnis wiederverwenden. Die Antwort enthält `run` oder `null`.
 - POST `/v1/machine/jobs/{id}/result`: dieselbe `request_id`, `status`, `exit_code` und `output`. Nur die eigene beanspruchte Ausführung darf gemeldet werden; doppelte identische Berichte werden bestätigt.
 
-Die Geräte führen nur fest implementierte Aktionen aus. Jobnamen und Ausgaben werden als Text angezeigt, nicht als Skript oder HTML ausgeführt.
+Die Geräte führen feste Aktionen oder ausdrücklich angelegte Custom-Skripte aus. Jobnamen und Ausgaben werden in der Weboberfläche als Text angezeigt und nicht als HTML ausgeführt.
+
+## Eigene Skripte
+
+Der zusätzliche Jobtyp `custom-script` führt eigene Skripte mit **Root-Rechten** auf den zugewiesenen Linux-Geräten aus. Er ist ausschließlich für Administratoren verfügbar und wird genauso geplant, pausiert und protokolliert wie die festen Jobtypen. Der Code ist nicht sandboxed: Er kann Dateien, Benutzer, Dienste und das Gerät vollständig verändern. Passwörter oder Schlüssel nicht in Vorlagen einbetten; andere Administratoren können die Skripte und ihre historischen Versionen lesen.
+
+In der Webverwaltung „Eigenes Skript (Root)“ auswählen. Danach Interpreter wählen und Code einfügen oder eine UTF-8-Datei laden. Unterstützt werden:
+
+| Interpreter | Ausführung |
+|---|---|
+| `bash` | `/bin/bash --noprofile --norc SCRIPT` |
+| `sh` | `/bin/sh SCRIPT` |
+| `python3` | `/usr/bin/python3 -I -B SCRIPT` |
+
+Der gewählte Interpreter gilt unabhängig von einer Shebang-Zeile. Python 3 muss auf dem Zielsystem installiert sein; sonst schlägt der Lauf mit sichtbarer Fehlermeldung fehl. Die Datei darf höchstens 16 KiB UTF-8-Text enthalten und keine NUL-Bytes. Windows-Zeilenenden und ein führendes UTF-8-BOM werden vor Speicherung normalisiert. Bash/sh verwenden die normalen Shell-Exitregeln; für einen Abbruch beim ersten Fehler beispielsweise `set -eu` selbst setzen.
+
+Beispiel:
+
+```bash
+#!/bin/bash
+set -eu
+printf 'Gerät: %s\nLauf: %s\n' "$LINAD_DEVICE_ID" "$LINAD_RUN_ID"
+id
+```
+
+Die Variablen `LINAD_JOB_ID`, `LINAD_RUN_ID` und `LINAD_DEVICE_ID` sind verfügbar. Benutzer-/Geräte-Zugangsdaten werden nicht als Variablen an das Skript übergeben. Der Prozess erhält einen festen Standard-PATH sowie die bereits vom Root-Dienst konfigurierten Proxyvariablen.
+
+Die Ausführung erfolgt aus einem privaten temporären Verzeichnis, mit Skriptdatei-Modus 0600 und begrenzter Ausgabe. Nach dem Lauf wird dieses Verzeichnis entfernt. Hintergrundprozesse derselben Prozessgruppe werden beendet; langfristige Dienste stattdessen bewusst über systemd installieren/starten. Es gelten das 30-Minuten-Limit, die geordnete Beendigung beim Dienstneustart und dieselben Regeln für unklare Ergebnisse wie bei Paketjobs. Skripte, die selbst neu starten oder den Agenten beenden, können einen unklaren Lauf verursachen und werden nicht blind erneut ausgeführt.
+
+Jeder eingereihte Lauf speichert eine eigene Kopie von Interpreter, normalisiertem Inhalt und SHA-256 des Inhalts. „Skript anzeigen / bearbeiten“ ändert nur die Vorlage für **neu** eingereihte Läufe. Bereits wartende oder laufende Aufträge bleiben unverändert. Über „Skriptversion“ an einer historischen Ausführung lässt sich der damalige Code ansehen – auch nach Bearbeitung oder Löschung der Vorlage. Der Fingerabdruck ist eine Revisions-/Integritätskennung, keine digitale Signatur und keine Prüfung der Unbedenklichkeit des Codes.
+
+Die Listen-APIs liefern Metadaten und Fingerabdruck ohne den Quelltext. GET `/v1/jobs/{id}` liefert die aktuelle Vorlage; GET `/v1/job-runs/{id}` liefert den damaligen Lauf einschließlich Skript. Beide erfordern Administratorrechte. Der Geräte-Claim enthält ausschließlich das für dieses Gerät beanspruchte Skript. Der Worker prüft Inhalt, Interpreter und Fingerabdruck noch einmal vor dem Start.
+
+CLI:
+
+```text
+job-script "Wartung" bash ./wartung.sh DEVICE_ID
+job-script-schedule "Nachtwartung" bash ./wartung.sh "2026-11-04T03:00:00+01:00" 1440 DEVICE_ID
+job-script-set JOB_ID bash ./wartung-neu.sh
+job-show JOB_ID
+job-run-show RUN_ID
+```
+
+POST `/v1/jobs` bzw. PATCH `/v1/jobs/{id}` unterstützen `script` und `interpreter`:
+
+```json
+{"name":"Wartung","kind":"custom-script","interpreter":"bash","script":"set -eu\nprintf 'Hallo\\n'\n","device_ids":["DEVICE_ID"],"enabled":true}
+```
+
+Den Fingerabdruck berechnet der Server; er wird nicht vom Aufrufer vorgegeben. Aktuelle Server- und Linux-Agent-Version installieren. Ältere Agenten kennen diesen Jobtyp nicht und führen ihn nicht aus. Für bestehende Geräte genügt das erneute Ausführen des aktualisierten Linux-Installers, ohne neues Enrollment.

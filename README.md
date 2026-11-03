@@ -225,7 +225,7 @@ Freigegebene Administratoren verwenden ihr Linad-Passwort für `sudo` und `sudo 
 
 Unter **Automatisierung** können Administratoren Linux-Geräten Systeminfo-, Paketlisten- und Paketupdate-Jobs zuweisen. Unterstützt sind sofortige Einreihung, einmalige Startzeiten, wiederkehrende Intervalle, Pausieren, Zuordnungsänderungen, Status und Ausgaben. Der Linux-Dienst arbeitet Aufträge im Hintergrund ab und hält Ergebnisberichte bei Verbindungsproblemen lokal vor.
 
-Server und Linux-Provisioner-Paket aktualisieren; auf bestehenden Geräten `sudo sh scripts/install-linux.sh` erneut als bisheriger lokaler Administrator/Root ausführen. Kein neuer Enrollment-Token nötig. Alte Agenten ohne Job-Worker führen keine Aufträge aus. Windows-Ausführung und freie Shell-Skripte sind noch nicht enthalten.
+Server und Linux-Provisioner-Paket aktualisieren; auf bestehenden Geräten `sudo sh scripts/install-linux.sh` erneut als bisheriger lokaler Administrator/Root ausführen. Kein neuer Enrollment-Token nötig. Alte Agenten ohne Job-Worker führen keine Aufträge aus. Windows-Ausführung ist noch nicht enthalten. Eigene Bash-/sh-/Python-Skripte können Administratoren als Custom-Job hinterlegen.
 
 Die vollständige Beschreibung, CLI/API und Wiederanlaufregeln stehen unter [docs/jobs.md](docs/jobs.md). Für Paketupdates bleiben APT-Verifikation und bestehende Konfigurationen erhalten. Es gibt keinen automatischen Neustart und keinen blinden Wiederholungsversuch nach unklarem Ausgang. Aktive Updates dürfen bei einem normalen Agent-Neustart fertig laufen, weshalb das Update des Agenten länger dauern kann.
 
@@ -238,3 +238,9 @@ LINAD_TEST_BASE_IMAGE=ubuntu:26.04 LINAD_TEST_SUDO_PACKAGE=sudo-rs LINAD_TEST_IM
 ```
 
 Die Tests prüfen echte `sudo`-/`sudo -i`-Aufrufe, sofortigen Rollenentzug, unveränderten lokalen sudo-Zugriff, die Reparatur einer alten Linad-Regel und die Wiederherstellung der PAM-Dateien bei Deinstallation.
+
+## Custom-Jobs mit eigenen Skripten
+
+Unter **Automatisierung → Eigenes Skript (Root)** einen Interpreter wählen und Code einfügen oder eine Datei laden. Unterstützt sind Bash, sh und Python 3 mit maximal 16 KiB UTF-8-Quelltext. Skripte laufen als Root; sie können sofort, einmalig oder wiederkehrend zugeordnet werden. Vorlagen lassen sich bearbeiten, während bereits eingereihte Läufe ihre unveränderliche Skriptkopie behalten. Die damalige Version ist an jeder Ausführung einsehbar.
+
+Server und Linux-Provisioner aktualisieren; anschließend den Linux-Installer auf bestehenden Geräten erneut ausführen. Details zu Rechten, Grenzen, Revisionen, CLI und API: [Eigene Skripte](docs/jobs.md#eigene-skripte).

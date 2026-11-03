@@ -93,7 +93,11 @@ func (a *App) Handler() http.Handler {
 				writeJSON(w, 403, map[string]string{"error": "Lokaler Zugriff verweigert. GUI über die Client-Anwendung öffnen."})
 				return
 			}
-			r.Body = http.MaxBytesReader(w, r.Body, 65536)
+			limit := int64(65536)
+			if r.URL.Path == "/v1/jobs" || strings.HasPrefix(r.URL.Path, "/v1/jobs/") {
+				limit = 128 * 1024
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 			if r.URL.Path == "/client/quit" && r.Method == "POST" {
 				writeJSON(w, 200, map[string]bool{"ok": true})
 				if a.OnClose != nil {

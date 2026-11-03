@@ -15,6 +15,9 @@ const MaxJobOutput = 12000
 const JobLease = time.Hour
 
 type Job struct {
+	Script          string     `json:"script,omitempty"`
+	Interpreter     string     `json:"interpreter,omitempty"`
+	ScriptSHA256    string     `json:"script_sha256,omitempty"`
 	ID              string     `json:"id"`
 	Name            string     `json:"name"`
 	Kind            string     `json:"kind"`
@@ -26,24 +29,27 @@ type Job struct {
 	CreatedBy       string     `json:"created_by"`
 }
 type JobRun struct {
-	ID         string     `json:"id"`
-	JobID      string     `json:"job_id"`
-	JobName    string     `json:"job_name"`
-	Kind       string     `json:"kind"`
-	DeviceID   string     `json:"device_id"`
-	Status     string     `json:"status"`
-	CreatedAt  time.Time  `json:"created_at"`
-	StartedAt  *time.Time `json:"started_at"`
-	FinishedAt *time.Time `json:"finished_at"`
-	LeaseUntil *time.Time `json:"lease_until"`
-	ExitCode   *int       `json:"exit_code"`
-	Output     string     `json:"output"`
-	Resolved   bool       `json:"resolved"`
-	ClaimHash  string     `json:"claim_hash,omitempty"`
+	Script       string     `json:"script,omitempty"`
+	Interpreter  string     `json:"interpreter,omitempty"`
+	ScriptSHA256 string     `json:"script_sha256,omitempty"`
+	ID           string     `json:"id"`
+	JobID        string     `json:"job_id"`
+	JobName      string     `json:"job_name"`
+	Kind         string     `json:"kind"`
+	DeviceID     string     `json:"device_id"`
+	Status       string     `json:"status"`
+	CreatedAt    time.Time  `json:"created_at"`
+	StartedAt    *time.Time `json:"started_at"`
+	FinishedAt   *time.Time `json:"finished_at"`
+	LeaseUntil   *time.Time `json:"lease_until"`
+	ExitCode     *int       `json:"exit_code"`
+	Output       string     `json:"output"`
+	Resolved     bool       `json:"resolved"`
+	ClaimHash    string     `json:"claim_hash,omitempty"`
 }
 
 func ValidJobKind(kind string) bool {
-	return kind == "system-info" || kind == "apt-refresh" || kind == "apt-upgrade"
+	return kind == "system-info" || kind == "apt-refresh" || kind == "apt-upgrade" || kind == "custom-script"
 }
 func copyJobState(st State) State {
 	data, _ := json.Marshal(st)
@@ -110,7 +116,7 @@ func queueJob(st *State, job Job, now time.Time, manual bool) error {
 		if err != nil {
 			return err
 		}
-		st.Runs[runID] = JobRun{ID: runID, JobID: job.ID, JobName: job.Name, Kind: job.Kind, DeviceID: id, Status: "queued", CreatedAt: now}
+		st.Runs[runID] = JobRun{ID: runID, JobID: job.ID, JobName: job.Name, Kind: job.Kind, Script: job.Script, Interpreter: job.Interpreter, ScriptSHA256: job.ScriptSHA256, DeviceID: id, Status: "queued", CreatedAt: now}
 	}
 	return nil
 }
@@ -185,6 +191,7 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request, u User) {
 		if r.URL.Path == "/v1/jobs" {
 			list := []Job{}
 			for _, j := range next.Jobs {
+				j.Script = ""
 				list = append(list, j)
 			}
 			sort.Slice(list, func(i, j int) bool { return list[i].CreatedAt.After(list[j].CreatedAt) })
@@ -198,6 +205,7 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request, u User) {
 				if id := r.URL.Query().Get("job_id"); id != "" && run.JobID != id {
 					continue
 				}
+				run.Script = ""
 				list = append(list, publicRun(run))
 			}
 			sort.Slice(list, func(i, j int) bool {
@@ -214,21 +222,51 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request, u User) {
 		return
 	}
 	switch {
+	case len(parts) == 3 && r.Method == "GET" && parts[1] == "jobs":
+		job, ok := next.Jobs[parts[2]]
+		if !ok {
+			fail(w, 404, "job not found")
+			return
+		}
+		reply(w, 200, job)
+		return
+	case len(parts) == 3 && r.Method == "GET" && parts[1] == "job-runs":
+		run, ok := next.Runs[parts[2]]
+		if !ok {
+			fail(w, 404, "run not found")
+			return
+		}
+		reply(w, 200, publicRun(run))
+		return
 	case r.URL.Path == "/v1/jobs" && r.Method == "POST":
 		var b struct {
-			Name      string     `json:"name"`
-			Kind      string     `json:"kind"`
-			DeviceIDs []string   `json:"device_ids"`
-			StartAt   *time.Time `json:"start_at"`
-			Interval  int        `json:"interval_minutes"`
-			Enabled   *bool      `json:"enabled"`
+			Name        string     `json:"name"`
+			Script      string     `json:"script"`
+			Interpreter string     `json:"interpreter"`
+			Kind        string     `json:"kind"`
+			DeviceIDs   []string   `json:"device_ids"`
+			StartAt     *time.Time `json:"start_at"`
+			Interval    int        `json:"interval_minutes"`
+			Enabled     *bool      `json:"enabled"`
 		}
-		if !decode(w, r, &b) {
+		if !decodeLimited(w, r, &b, 128*1024) {
 			return
 		}
 		b.Name = strings.TrimSpace(b.Name)
 		if b.Name == "" || len(b.Name) > 80 || !ValidJobKind(b.Kind) || b.Interval < 0 || (b.Interval > 0 && b.Interval < 5) || b.Interval > 525600 {
 			fail(w, 400, "invalid job name, kind or interval (0 or 5–525600 minutes)")
+			return
+		}
+		script, interpreter, hash := "", "", ""
+		if b.Kind == "custom-script" {
+			var err error
+			interpreter, script, hash, err = NormalizeJobScript(b.Interpreter, b.Script)
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
+		} else if b.Script != "" || b.Interpreter != "" {
+			fail(w, 400, "script fields require custom-script kind")
 			return
 		}
 		if len(next.Jobs) >= 200 {
@@ -253,7 +291,7 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request, u User) {
 			return
 		}
 		enabled := b.Enabled == nil || *b.Enabled
-		job := Job{ID: id, Name: b.Name, Kind: b.Kind, DeviceIDs: uniqueNames(b.DeviceIDs), Enabled: enabled, IntervalMinutes: b.Interval, NextRunAt: &start, CreatedAt: now, CreatedBy: u.Name}
+		job := Job{ID: id, Name: b.Name, Kind: b.Kind, Script: script, Interpreter: interpreter, ScriptSHA256: hash, DeviceIDs: uniqueNames(b.DeviceIDs), Enabled: enabled, IntervalMinutes: b.Interval, NextRunAt: &start, CreatedAt: now, CreatedBy: u.Name}
 		next.Jobs[id] = job
 		advanceJobs(&next, now)
 		result = next.Jobs[id]
@@ -265,17 +303,40 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request, u User) {
 			return
 		}
 		var b struct {
-			Enabled   *bool      `json:"enabled"`
-			DeviceIDs *[]string  `json:"device_ids"`
-			StartAt   *time.Time `json:"start_at"`
-			Interval  *int       `json:"interval_minutes"`
+			Enabled     *bool      `json:"enabled"`
+			DeviceIDs   *[]string  `json:"device_ids"`
+			StartAt     *time.Time `json:"start_at"`
+			Interval    *int       `json:"interval_minutes"`
+			Script      *string    `json:"script"`
+			Interpreter *string    `json:"interpreter"`
 		}
-		if !decode(w, r, &b) {
+		if !decodeLimited(w, r, &b, 128*1024) {
 			return
 		}
-		if b.Enabled == nil && b.DeviceIDs == nil && b.StartAt == nil && b.Interval == nil {
+		if b.Enabled == nil && b.DeviceIDs == nil && b.StartAt == nil && b.Interval == nil && b.Script == nil && b.Interpreter == nil {
 			fail(w, 400, "job configuration field required")
 			return
+		}
+		if b.Script != nil || b.Interpreter != nil {
+			if job.Kind != "custom-script" {
+				fail(w, 400, "script fields require custom-script kind")
+				return
+			}
+			source, interpreter := job.Script, job.Interpreter
+			if b.Script != nil {
+				source = *b.Script
+			}
+			if b.Interpreter != nil {
+				interpreter = *b.Interpreter
+			}
+			interpreter, source, hash, err := NormalizeJobScript(interpreter, source)
+			if err != nil {
+				fail(w, 400, err.Error())
+				return
+			}
+			job.Script = source
+			job.Interpreter = interpreter
+			job.ScriptSHA256 = hash
 		}
 		if b.DeviceIDs != nil {
 			if err := validateJobTargets(next, *b.DeviceIDs); err != nil {

@@ -181,6 +181,30 @@ with tempfile.TemporaryDirectory() as tmp:
         assert result['status']=='succeeded' and 'Architecture:' in result['output']
         run([AGENT,'jobs-once'])
         assert len([r for r in api('GET','/v1/job-runs') if r['job_id']==inventory['id']])==1
+        # Custom source is snapshotted per run and executed as root.
+        script_marker=tmp+'/script-version-marker'
+        first_source="set -eu\nprintf old >> '"+script_marker+"'\nprintf 'uid=%s device=%s\\n' \"$(id -u)\" \"$LINAD_DEVICE_ID\"\n"
+        custom=api('POST','/v1/jobs',{'name':'Custom Bash','kind':'custom-script','interpreter':'bash','script':first_source,'device_ids':[device['id']]},201)
+        api('PATCH','/v1/jobs/'+custom['id'],{'script':"printf new >> '"+script_marker+"'\n"})
+        run([AGENT,'jobs-once'])
+        first_result=job_run(custom)
+        assert first_result['status']=='succeeded' and 'uid=0 device='+device['id'] in first_result['output']
+        first_detail=api('GET','/v1/job-runs/'+first_result['id'])
+        assert first_detail['script']==first_source and first_detail['script_sha256']==custom['script_sha256']
+        assert Path(script_marker).read_text()=='old'
+        api('POST','/v1/jobs/'+custom['id']+'/run')
+        run([AGENT,'jobs-once'])
+        assert job_run(custom)['status']=='succeeded' and Path(script_marker).read_text()=='oldnew'
+        for interpreter,source,expected in [
+            ('sh','printf sh-ok\n','sh-ok'),
+            ('python3','import os\nprint("python-uid=" + str(os.geteuid()))\n','python-uid=0')]:
+            scripted=api('POST','/v1/jobs',{'name':'Custom '+interpreter,'kind':'custom-script','interpreter':interpreter,'script':source,'device_ids':[device['id']]},201)
+            run([AGENT,'jobs-once'])
+            result=job_run(scripted)
+            assert result['status']=='succeeded' and expected in result['output']
+        failing=api('POST','/v1/jobs',{'name':'Expected script failure','kind':'custom-script','interpreter':'bash','script':'printf failed-script\nexit 7\n','device_ids':[device['id']]},201)
+        run([AGENT,'jobs-once'])
+        assert job_run(failing)['status']=='failed' and job_run(failing)['exit_code']==7
         retried = create_job('Retry-safe inventory')
         drops = {'claim':True,'result':True,'claim_count':0,'result_count':0}
         class DropReplies(http.server.BaseHTTPRequestHandler):
@@ -318,7 +342,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert 'linad-linux' not in Path('/etc/pam.d/common-auth').read_text()
         pam('localadmin',local_password)
         pam(alice,account_only=True,ok=False)
-        print('PASS: real Linux jobs, apt refresh, lost-response retries, no duplicate execution, crash recovery/resolution, graceful daemon drain, Debian sudo/sudo-i, immediate role revocation, normal-user denial, PAM login/session, private homes, stable UID/GID, default deny, local-account collision protection, admin ACLs/groups, daemon sync, immediate revocation, password changes, one-use enrollment, CA validation, credential-file permissions, offline deny/local fallback, idempotent install and uninstall')
+        print('PASS: real root Bash/sh/Python scripts, immutable revisions, script failure exit codes, Linux jobs, apt refresh, lost-response retries, no duplicate execution, crash recovery/resolution, graceful daemon drain, Debian sudo/sudo-i, immediate role revocation, normal-user denial, PAM login/session, private homes, stable UID/GID, default deny, local-account collision protection, admin ACLs/groups, daemon sync, immediate revocation, password changes, one-use enrollment, CA validation, credential-file permissions, offline deny/local fallback, idempotent install and uninstall')
     finally:
         if daemon is not None and daemon.poll() is None:
             daemon.terminate(); daemon.wait(timeout=10)

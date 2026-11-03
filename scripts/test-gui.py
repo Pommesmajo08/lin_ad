@@ -151,6 +151,51 @@ with tempfile.TemporaryDirectory() as tmp:
             jobcard.get_by_role('button',name='Job löschen',exact=True).click()
             page.get_by_text('Job gelöscht.',exact=True).wait_for()
             assert cli('jobs')==[] and len(cli('job-runs'))==2
+            # Upload and edit a script; the already queued run must retain its source.
+            source="set -eu\n# <script>window.badScriptSource=1</script>\nprintf 'original\\n'\n"
+            page.locator('#job-form [name=kind]').select_option('custom-script')
+            expect(page.locator('#job-script-fields')).to_be_visible()
+            page.locator('#job-script-file').set_input_files({'name':'custom.sh','mimeType':'text/plain','buffer':source.encode()})
+            expect(page.locator('#job-form [name=script]')).to_have_value(source)
+            page.locator('#job-form [name=name]').fill('Custom script')
+            page.locator('#job-devices').select_option(devices[0]['id'])
+            page.get_by_role('button',name='Job anlegen',exact=True).click()
+            page.get_by_text('Job angelegt.',exact=True).wait_for()
+            custom=cli('jobs')[0]
+            assert 'script' not in custom and custom['kind']=='custom-script'
+            assert cli('job-show',custom['id'])['script']==source
+            card=page.locator('.job-card').filter(has=page.get_by_role('heading',name='Custom script',exact=True))
+            card.get_by_role('button',name='Skript anzeigen / bearbeiten',exact=True).click()
+            expect(card.locator('textarea')).to_have_value(source)
+            replacement="printf 'changed\\n'\n"
+            card.locator('textarea').fill(replacement)
+            card.get_by_role('button',name='Skript speichern',exact=True).click()
+            page.get_by_text('Skript für neue Läufe gespeichert.',exact=True).wait_for()
+            assert cli('job-show',custom['id'])['script']==replacement
+            nonce=secrets.token_hex(32)
+            old_run=machine_api('/v1/machine/jobs/claim',{'request_id':nonce})['run']
+            assert old_run['script']==source and old_run['script_sha256']==custom['script_sha256']
+            machine_api('/v1/machine/jobs/'+old_run['id']+'/result',{'request_id':nonce,'status':'succeeded','exit_code':0,'output':'script-output'})
+            page.get_by_role('button',name='Jobstatus aktualisieren',exact=True).click()
+            page.get_by_text('Jobstatus aktualisiert.',exact=True).wait_for()
+            page.locator('#job-runs').get_by_role('button',name='Skriptversion',exact=True).click()
+            expect(page.locator('#run-script-dialog')).to_be_visible()
+            expect(page.locator('#run-script-source')).to_have_value(source)
+            assert page.evaluate('window.badScriptSource === undefined')
+            page.get_by_role('button',name='Schließen',exact=True).click()
+            assert page.locator('#run-script-source').input_value()==''
+            card.get_by_role('button',name='Jetzt ausführen',exact=True).click()
+            page.get_by_text('Job eingereiht. Ausführung beim nächsten Geräteabruf.',exact=True).wait_for()
+            nonce=secrets.token_hex(32)
+            updated_run=machine_api('/v1/machine/jobs/claim',{'request_id':nonce})['run']
+            assert updated_run['script']==replacement
+            machine_api('/v1/machine/jobs/'+updated_run['id']+'/result',{'request_id':nonce,'status':'failed','exit_code':7,'output':'expected failure'})
+            page.get_by_role('button',name='Jobstatus aktualisieren',exact=True).click()
+            expect(page.locator('#job-runs')).to_contain_text('Fehlgeschlagen')
+            card.get_by_role('button',name='Job löschen',exact=True).click()
+            page.get_by_text('Job gelöscht.',exact=True).wait_for()
+            assert cli('jobs')==[] and len(cli('job-runs'))==4
+
             device_id = next(device['id'] for device in cli('devices') if device['name'] == 'cli-workstation')
             assert cli('device-heartbeat', device_id)['id'] == device_id
             assert cli('device-delete', device_id)['ok']
@@ -166,7 +211,7 @@ with tempfile.TemporaryDirectory() as tmp:
             assert not errors, errors
             browser.close()
         assert gui.wait(timeout=10) == 0
-        print('PASS: GUI jobs/schedules/assignments, manual trigger/cancel/history, safe log rendering, GUI executable, server selection, login, device registration/heartbeat/removal, CLI interoperability, mobile layout, local access protection and clean shutdown')
+        print('PASS: custom script upload/edit/immutable snapshots/source preview, GUI jobs/schedules/assignments, manual trigger/cancel/history, safe log rendering, GUI executable, server selection, login, device registration/heartbeat/removal, CLI interoperability, mobile layout, local access protection and clean shutdown')
     finally:
         if gui is not None and gui.poll() is None:
             gui.terminate()

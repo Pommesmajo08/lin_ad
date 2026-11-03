@@ -136,8 +136,9 @@ func reply(w http.ResponseWriter, status int, v any) {
 func fail(w http.ResponseWriter, status int, msg string) {
 	reply(w, status, map[string]string{"error": msg})
 }
-func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, 65536)
+func decode(w http.ResponseWriter, r *http.Request, v any) bool { return decodeLimited(w, r, v, 65536) }
+func decodeLimited(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
 	if d.Decode(v) != nil || d.Decode(new(any)) != io.EOF {
