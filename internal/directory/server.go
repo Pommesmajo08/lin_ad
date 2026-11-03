@@ -29,6 +29,8 @@ type User struct {
 	Hash      string `json:"hash,omitempty"`
 }
 type State struct {
+	Jobs       map[string]Job      `json:"jobs"`
+	Runs       map[string]JobRun   `json:"job_runs"`
 	NextUnixID int                 `json:"next_unix_id"`
 	Users      map[string]User     `json:"users"`
 	Groups     map[string][]string `json:"groups"`
@@ -259,6 +261,10 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/v1/devices" || strings.HasPrefix(r.URL.Path, "/v1/devices/") {
 		s.devices(w, r, u)
+		return
+	}
+	if r.URL.Path == "/v1/jobs" || strings.HasPrefix(r.URL.Path, "/v1/jobs/") || r.URL.Path == "/v1/job-runs" || strings.HasPrefix(r.URL.Path, "/v1/job-runs/") {
+		s.jobs(w, r, u)
 		return
 	}
 	if !u.Admin {

@@ -50,12 +50,13 @@ func run() error {
 		return errors.New("linad-linux must run as root")
 	}
 	if len(os.Args) < 2 {
-		return errors.New("commands: enroll, sync, daemon, pam-auth, pam-account, deactivate")
+		return errors.New("commands: enroll, sync, daemon, jobs-once, pam-auth, pam-account, deactivate")
 	}
 	mode := os.Args[1]
 	flags := flag.NewFlagSet(mode, flag.ContinueOnError)
 	config := flags.String("config", linuxclient.DefaultConfig, "root-owned configuration file")
 	state := flags.String("state", linuxclient.DefaultState, "root-owned account registry")
+	jobsState := flags.String("jobs-state", linuxclient.DefaultJobsState, "root-owned job journal")
 	server := flags.String("server", "", "HTTPS directory server")
 	deviceID := flags.String("device-id", "", "administrator-created device ID")
 	caFile := flags.String("ca-file", "", "optional CA PEM file")
@@ -114,6 +115,9 @@ func run() error {
 		return err
 	}
 	switch mode {
+	case "jobs-once":
+		_, err := linuxclient.ProcessJobOnce(context.Background(), c, *jobsState)
+		return err
 	case "sync":
 		return linuxclient.Sync(ctx, c, *state)
 	case "deactivate":
@@ -137,6 +141,8 @@ func run() error {
 		}
 		daemonCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 		defer stop()
+		jobsDone := make(chan struct{})
+		go func() { defer close(jobsDone); linuxclient.RunJobWorker(daemonCtx, c, *jobsState) }()
 		ticker := time.NewTicker(*interval)
 		defer ticker.Stop()
 		for {
@@ -148,6 +154,7 @@ func run() error {
 			}
 			select {
 			case <-daemonCtx.Done():
+				<-jobsDone
 				return nil
 			case <-ticker.C:
 			}

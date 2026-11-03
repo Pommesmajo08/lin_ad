@@ -12,19 +12,20 @@ import (
 )
 
 type Device struct {
-	ID                string    `json:"id"`
-	Name              string    `json:"name"`
-	OS                string    `json:"os"`
-	Owner             string    `json:"owner"`
-	CreatedAt         time.Time `json:"created_at"`
-	LastSeen          time.Time `json:"last_seen"`
-	AllowAll          bool      `json:"allow_all"`
-	AllowedUsers      []string  `json:"allowed_users"`
-	AllowedGroups     []string  `json:"allowed_groups"`
-	CredentialHash    string    `json:"credential_hash,omitempty"`
-	EnrollmentHash    string    `json:"enrollment_hash,omitempty"`
-	EnrollmentExpires time.Time `json:"enrollment_expires,omitempty"`
-	Provisioned       bool      `json:"provisioned"`
+	ID                string     `json:"id"`
+	Name              string     `json:"name"`
+	OS                string     `json:"os"`
+	Owner             string     `json:"owner"`
+	CreatedAt         time.Time  `json:"created_at"`
+	LastSeen          time.Time  `json:"last_seen"`
+	AllowAll          bool       `json:"allow_all"`
+	AllowedUsers      []string   `json:"allowed_users"`
+	AllowedGroups     []string   `json:"allowed_groups"`
+	CredentialHash    string     `json:"credential_hash,omitempty"`
+	EnrollmentHash    string     `json:"enrollment_hash,omitempty"`
+	EnrollmentExpires time.Time  `json:"enrollment_expires,omitempty"`
+	LastJobPoll       *time.Time `json:"last_job_poll"`
+	Provisioned       bool       `json:"provisioned"`
 }
 
 var validDeviceName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
@@ -136,6 +137,25 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request, u User) {
 		switch {
 		case len(parts) == 3 && r.Method == "DELETE":
 			delete(next.Devices, d.ID)
+			now := time.Now().UTC()
+			for id, job := range next.Jobs {
+				devices := []string{}
+				for _, deviceID := range job.DeviceIDs {
+					if deviceID != d.ID {
+						devices = append(devices, deviceID)
+					}
+				}
+				job.DeviceIDs = devices
+				next.Jobs[id] = job
+			}
+			for id, run := range next.Runs {
+				if run.DeviceID == d.ID && run.Status == "queued" {
+					run.Status = "cancelled"
+					run.FinishedAt = &now
+					run.Output = "Device removed."
+					next.Runs[id] = run
+				}
+			}
 		case len(parts) == 4 && parts[3] == "heartbeat" && r.Method == "POST":
 			d.LastSeen = time.Now().UTC()
 			next.Devices[d.ID] = d

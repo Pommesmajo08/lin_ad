@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -33,7 +34,7 @@ func run() error {
 	}
 	a := flag.Args()
 	if len(a) == 0 {
-		return fmt.Errorf("commands: user-admin NAME, user-standard NAME, my-groups, login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER, devices, device-register [NAME], device-heartbeat ID, device-delete ID, device-access ID [USER...], device-access-groups ID [GROUP...], device-access-all ID, device-enrollment ID, device-revoke ID")
+		return fmt.Errorf("commands: jobs, job-runs, job-create NAME KIND DEVICE..., job-schedule NAME KIND START_RFC3339 INTERVAL_MINUTES DEVICE..., job-run ID, job-pause ID, job-resume ID, job-delete ID, job-cancel RUN_ID, job-resolve RUN_ID, user-admin NAME, user-standard NAME, my-groups, login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER, devices, device-register [NAME], device-heartbeat ID, device-delete ID, device-access ID [USER...], device-access-groups ID [GROUP...], device-access-all ID, device-enrollment ID, device-revoke ID")
 	}
 	method, path := "GET", ""
 	var body any
@@ -83,6 +84,37 @@ func run() error {
 		method, path = "POST", "/v1/devices/"+url.PathEscape(a[1])+"/heartbeat"
 	case a[0] == "device-delete" && len(a) == 2:
 		method, path = "DELETE", "/v1/devices/"+url.PathEscape(a[1])
+	case a[0] == "jobs" && len(a) == 1:
+		path = "/v1/jobs"
+	case a[0] == "job-runs" && len(a) == 1:
+		path = "/v1/job-runs"
+	case a[0] == "job-create" && len(a) >= 4:
+		method, path = "POST", "/v1/jobs"
+		body = map[string]any{"name": a[1], "kind": a[2], "device_ids": a[3:], "interval_minutes": 0, "enabled": true}
+	case a[0] == "job-schedule" && len(a) >= 6:
+		start, err := time.Parse(time.RFC3339, a[3])
+		if err != nil {
+			return err
+		}
+		interval, err := strconv.Atoi(a[4])
+		if err != nil {
+			return err
+		}
+		method, path = "POST", "/v1/jobs"
+		body = map[string]any{"name": a[1], "kind": a[2], "start_at": start, "interval_minutes": interval, "device_ids": a[5:], "enabled": true}
+	case a[0] == "job-run" && len(a) == 2:
+		method, path = "POST", "/v1/jobs/"+url.PathEscape(a[1])+"/run"
+	case (a[0] == "job-pause" || a[0] == "job-resume") && len(a) == 2:
+		method, path = "PATCH", "/v1/jobs/"+url.PathEscape(a[1])
+		body = map[string]bool{"enabled": a[0] == "job-resume"}
+	case a[0] == "job-delete" && len(a) == 2:
+		method, path = "DELETE", "/v1/jobs/"+url.PathEscape(a[1])
+	case (a[0] == "job-cancel" || a[0] == "job-resolve") && len(a) == 2:
+		action := "cancel"
+		if a[0] == "job-resolve" {
+			action = "resolve"
+		}
+		method, path = "POST", "/v1/job-runs/"+url.PathEscape(a[1])+"/"+action
 	case a[0] == "my-groups" && len(a) == 1:
 		path = "/v1/me/groups"
 	case (a[0] == "user-admin" || a[0] == "user-standard") && len(a) == 2:
@@ -133,9 +165,12 @@ func run() error {
 		return err
 	}
 	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, (8<<20)+1))
 	if err != nil {
 		return err
+	}
+	if len(b) > 8<<20 {
+		return fmt.Errorf("server response exceeds 8 MiB")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("server returned %d: %s", resp.StatusCode, b)

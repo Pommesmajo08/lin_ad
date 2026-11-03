@@ -12,5 +12,5 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags='-s -w -H wi
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o dist/linad-linux-amd64 ./cmd/linux-client
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags='-s -w' -o dist/linad-linux-arm64 ./cmd/linux-client
 for linad_arch in amd64 arm64; do
-  tar -czf "dist/linad-linux-provisioner-$linad_arch.tar.gz" "dist/linad-linux-$linad_arch" scripts/install-linux.sh scripts/uninstall-linux.sh packaging/linux docs/linux-provisioning.md
+  tar -czf "dist/linad-linux-provisioner-$linad_arch.tar.gz" "dist/linad-linux-$linad_arch" scripts/install-linux.sh scripts/uninstall-linux.sh packaging/linux docs/linux-provisioning.md docs/jobs.md
 done

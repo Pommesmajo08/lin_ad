@@ -36,6 +36,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	d.EnrollmentHash = ""
 	d.EnrollmentExpires = time.Time{}
 	d.LastSeen = time.Now().UTC()
+	d.LastJobPoll = nil
 	next.Devices[d.ID] = d
 	if err := s.save(next); err != nil {
 		fail(w, 500, "directory persistence failed")
@@ -60,6 +61,10 @@ func (s *Server) machine(w http.ResponseWriter, r *http.Request) {
 	d, ok := s.state.Devices[parts[0]]
 	if !ok || d.OS != "linux" || d.CredentialHash == "" || subtle.ConstantTimeCompare([]byte(tokenKey(parts[1])), []byte(d.CredentialHash)) != 1 {
 		fail(w, 401, "invalid device credential")
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v1/machine/jobs/") {
+		s.machineJobs(w, r, d)
 		return
 	}
 	if r.URL.Path == "/v1/machine/users" && r.Method == "GET" {

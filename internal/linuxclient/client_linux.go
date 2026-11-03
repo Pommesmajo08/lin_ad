@@ -32,6 +32,12 @@ type Config struct {
 	CAFile    string `json:"ca_file,omitempty"`
 	AllowHTTP bool   `json:"allow_http,omitempty"`
 }
+type HTTPError struct{ Status int }
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("directory request rejected (HTTP %d)", e.Status)
+}
+
 type Client struct {
 	Config Config
 	HTTP   *http.Client
@@ -143,7 +149,7 @@ func (c *Client) request(ctx context.Context, method, path string, body, out any
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("directory request rejected (HTTP %d)", resp.StatusCode)
+		return &HTTPError{Status: resp.StatusCode}
 	}
 	if out != nil {
 		return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)

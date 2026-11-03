@@ -220,3 +220,11 @@ Der Test verwendet Port 18081, prüft Administratorpflicht, Freigaben, Enrollmen
 Für sudo-Rechte sowohl Server als auch das Linux-Provisioner-Paket aktualisieren. Auf bereits eingerichteten Linux-Geräten genügt danach `sudo sh scripts/install-linux.sh`; die Konfiguration bleibt erhalten. Nur eine neue Binärdatei zu kopieren installiert den zusätzlich benötigten PAM-Dienst nicht. Siehe [sudo und Update-Anleitung](docs/linux-provisioning.md#administratoren-und-sudo).
 
 Freigegebene Administratoren verwenden ihr Linad-Passwort für `sudo` und `sudo -i`. Rollenentzug, Kontensperre und Gerätewiderruf werden bei neuen sudo-Aufrufen online geprüft. Bereits laufende Root-Shells werden nicht beendet. Normale Benutzer bekommen keine Root-Rechte. Die Maschinen-Passwortprüfung erlaubt bis zu 120 Versuche pro Minute und Gerät; die öffentliche Web-Anmeldung behält ihr eigenes Limit von 30 Versuchen pro Minute.
+
+## Automatisierung und geplante Jobs
+
+Unter **Automatisierung** können Administratoren Linux-Geräten Systeminfo-, Paketlisten- und Paketupdate-Jobs zuweisen. Unterstützt sind sofortige Einreihung, einmalige Startzeiten, wiederkehrende Intervalle, Pausieren, Zuordnungsänderungen, Status und Ausgaben. Der Linux-Dienst arbeitet Aufträge im Hintergrund ab und hält Ergebnisberichte bei Verbindungsproblemen lokal vor.
+
+Server und Linux-Provisioner-Paket aktualisieren; auf bestehenden Geräten `sudo sh scripts/install-linux.sh` erneut als bisheriger lokaler Administrator/Root ausführen. Kein neuer Enrollment-Token nötig. Alte Agenten ohne Job-Worker führen keine Aufträge aus. Windows-Ausführung und freie Shell-Skripte sind noch nicht enthalten.
+
+Die vollständige Beschreibung, CLI/API und Wiederanlaufregeln stehen unter [docs/jobs.md](docs/jobs.md). Für Paketupdates bleiben APT-Verifikation und bestehende Konfigurationen erhalten. Es gibt keinen automatischen Neustart und keinen blinden Wiederholungsversuch nach unklarem Ausgang. Aktive Updates dürfen bei einem normalen Agent-Neustart fertig laufen, weshalb das Update des Agenten länger dauern kann.
