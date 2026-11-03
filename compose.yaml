@@ -1,0 +1,18 @@
+services:
+  directory:
+    image: linad-server:local
+    build: .
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      LINAD_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+    secrets:
+      - admin_password
+    volumes:
+      - directory-data:/data
+    restart: unless-stopped
+secrets:
+  admin_password:
+    file: ${LINAD_ADMIN_SECRET_FILE:?Set LINAD_ADMIN_SECRET_FILE to a password file outside the repository}
+volumes:
+  directory-data:

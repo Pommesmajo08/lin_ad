@@ -1,0 +1,5 @@
+*
+!dist/
+!dist/linad-server
+!docker-data/
+!docker-data/.keep
