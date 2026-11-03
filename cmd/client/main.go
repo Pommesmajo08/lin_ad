@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -32,7 +33,7 @@ func run() error {
 	}
 	a := flag.Args()
 	if len(a) == 0 {
-		return fmt.Errorf("commands: login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER")
+		return fmt.Errorf("commands: login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER, devices, device-register [NAME], device-heartbeat ID, device-delete ID")
 	}
 	method, path := "GET", ""
 	var body any
@@ -49,6 +50,22 @@ func run() error {
 	case (a[0] == "user-disable" || a[0] == "user-enable") && len(a) == 2:
 		method, path = "PATCH", "/v1/users/"+url.PathEscape(a[1])
 		body = map[string]bool{"disabled": a[0] == "user-disable"}
+	case a[0] == "devices" && len(a) == 1:
+		path = "/v1/devices"
+	case a[0] == "device-register" && (len(a) == 1 || len(a) == 2):
+		name, err := os.Hostname()
+		if err != nil {
+			return err
+		}
+		if len(a) == 2 {
+			name = a[1]
+		}
+		method, path = "POST", "/v1/devices"
+		body = map[string]string{"name": strings.ToLower(name), "os": runtime.GOOS}
+	case a[0] == "device-heartbeat" && len(a) == 2:
+		method, path = "POST", "/v1/devices/"+url.PathEscape(a[1])+"/heartbeat"
+	case a[0] == "device-delete" && len(a) == 2:
+		method, path = "DELETE", "/v1/devices/"+url.PathEscape(a[1])
 	case a[0] == "me" && len(a) == 1:
 		path = "/v1/me"
 	case a[0] == "logout" && len(a) == 1:

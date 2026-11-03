@@ -27,8 +27,9 @@ type User struct {
 	Hash     string `json:"hash,omitempty"`
 }
 type State struct {
-	Users  map[string]User     `json:"users"`
-	Groups map[string][]string `json:"groups"`
+	Users   map[string]User     `json:"users"`
+	Groups  map[string][]string `json:"groups"`
+	Devices map[string]Device   `json:"devices"`
 }
 type session struct {
 	User    string
@@ -71,6 +72,9 @@ func New(path, password string) (*Server, error) {
 		if s.state.Users == nil || s.state.Groups == nil {
 			return nil, errors.New("invalid directory data")
 		}
+		if s.state.Devices == nil {
+			s.state.Devices = map[string]Device{}
+		}
 		return s, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
@@ -79,7 +83,7 @@ func New(path, password string) (*Server, error) {
 	if len(password) < 16 {
 		return nil, errors.New("initial LINAD_ADMIN_PASSWORD must contain at least 16 characters")
 	}
-	s.state = State{Users: map[string]User{"admin": passwordUser("admin", password, true)}, Groups: map[string][]string{}}
+	s.state = State{Users: map[string]User{"admin": passwordUser("admin", password, true)}, Groups: map[string][]string{}, Devices: map[string]Device{}}
 	if err = s.save(s.state); err != nil {
 		return nil, err
 	}
@@ -222,6 +226,10 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 		s.changePassword(w, r, u)
 		return
 	}
+	if r.URL.Path == "/v1/devices" || strings.HasPrefix(r.URL.Path, "/v1/devices/") {
+		s.devices(w, r, u)
+		return
+	}
 	if !u.Admin {
 		fail(w, 403, "administrator required")
 		return
@@ -316,6 +324,11 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			delete(next.Users, parts[2])
+			for id, device := range next.Devices {
+				if device.Owner == parts[2] {
+					delete(next.Devices, id)
+				}
+			}
 			for g, members := range next.Groups {
 				filtered := []string{}
 				for _, m := range members {

@@ -1,5 +1,7 @@
 'use strict';
 let token = '', profile = null;
+const localSecret = /^#gui=[a-f0-9]{64}$/.test(location.hash) ? location.hash.slice(5) : '';
+let guiConnected = !localSecret;
 const $ = id => document.getElementById(id);
 const pathName = name => encodeURIComponent(name);
 function message(text, error = false) {
@@ -10,12 +12,13 @@ function message(text, error = false) {
 function signedOut() {
   token = ''; profile = null;
   $('workspace').hidden = true; $('session').hidden = true;
-  $('admin-panel').hidden = true; $('login-panel').hidden = false;
-  $('users').replaceChildren(); $('groups').replaceChildren(); $('reset-user').replaceChildren();
+  $('admin-panel').hidden = true; $('login-panel').hidden = !guiConnected;
+  $('users').replaceChildren(); $('groups').replaceChildren(); $('reset-user').replaceChildren(); $('devices').replaceChildren();
   document.querySelectorAll('input[type=password]').forEach(input => { input.value = ''; });
 }
 async function api(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
+  if (localSecret) headers['X-Linad-Client'] = localSecret;
   if (token) headers.Authorization = `Bearer ${token}`;
   const response = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', redirect: 'error' });
   const data = await response.json();
@@ -76,6 +79,23 @@ async function refresh() {
   $('welcome').textContent = profile.admin ? 'Verzeichnisübersicht' : `Hallo, ${profile.name}.`;
   $('admin-panel').hidden = !profile.admin;
   $('workspace').hidden = false; $('session').hidden = false; $('login-panel').hidden = true;
+  const devices = await api('GET', '/v1/devices');
+  $('device-count').textContent = `(${devices.length})`;
+  $('devices').replaceChildren();
+  devices.forEach(device => {
+    const row = element('tr');
+    row.append(element('td', device.name), element('td', device.os === 'windows' ? 'Windows' : 'Linux'), element('td', device.owner), element('td', new Date(device.last_seen).toLocaleString()));
+    const controls = element('td');
+    controls.append(button('Rückmeldung', () => mutate('POST', `/v1/devices/${pathName(device.id)}/heartbeat`, undefined, 'Rückmeldung gespeichert.')));
+    controls.append(button('Entfernen', async () => {
+      if (!confirm(`Gerät ${device.name} aus dem Verzeichnis entfernen?`)) return;
+      await mutate('DELETE', `/v1/devices/${pathName(device.id)}`, undefined, 'Gerät entfernt.');
+    }, 'danger'));
+    row.append(controls); $('devices').append(row);
+  });
+  if (!devices.length) {
+    const row = element('tr'); const cell = element('td', 'Noch keine Geräte registriert.', 'muted'); cell.colSpan = 5; row.append(cell); $('devices').append(row);
+  }
   if (!profile.admin) return;
   const users = await api('GET', '/v1/users');
   const groups = await api('GET', '/v1/groups');
@@ -153,3 +173,34 @@ $('logout').addEventListener('click', () => action(async () => {
   message('Du bist abgemeldet.');
 }));
 $('refresh').addEventListener('click', () => action(async () => { await refresh(); message('Verzeichnis aktualisiert.'); }));
+
+onForm('device-form', async (data, form) => {
+  await api('POST', '/v1/devices', data); form.reset(); await refresh(); message('Gerät registriert.');
+});
+onForm('connection-form', async (data) => {
+  await api('POST', '/client/connect', { server: data.server, allow_http: data.allow_http === 'on' });
+  guiConnected = true; signedOut();
+  $('connection-panel').hidden = true;
+  $('server-address').textContent = data.server;
+  message('Server ausgewählt. Bitte anmelden.');
+});
+$('quit-client').addEventListener('click', () => action(async () => {
+  if (token) { try { await api('POST', '/v1/logout'); } catch (_) { /* Always permit local shutdown. */ } }
+  await api('POST', '/client/quit'); signedOut(); guiConnected = false;
+  $('login-panel').hidden = true; $('local-client').hidden = true;
+  message('Der lokale Client wurde beendet. Du kannst diesen Tab schließen.');
+}));
+if (localSecret) {
+  $('login-panel').hidden = true; $('local-client').hidden = false;
+  action(async () => {
+    const info = await api('GET', '/client/info');
+    guiConnected = !!info.server;
+    $('connection-panel').hidden = guiConnected;
+    $('login-panel').hidden = !guiConnected;
+    $('server-address').textContent = info.server || 'Noch kein Server ausgewählt';
+    const nameInput = $('device-form').elements.name;
+    nameInput.defaultValue = info.name;
+    $('device-form').elements.os.value = info.os === 'windows' ? 'windows' : 'linux';
+    for (const option of $('device-form').elements.os.options) option.defaultSelected = option.value === info.os;
+  });
+}

@@ -32,3 +32,6 @@ func securityHeaders(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// WebHandler serves the embedded client interface with browser security headers.
+func WebHandler() http.Handler { return securityHeaders(webHandler()) }
