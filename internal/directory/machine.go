@@ -66,7 +66,7 @@ func (s *Server) machine(w http.ResponseWriter, r *http.Request) {
 		accounts := []UnixAccount{}
 		for _, u := range s.state.Users {
 			if deviceAllows(s.state, d, u) {
-				accounts = append(accounts, UnixAccount{Name: u.Name, Login: u.LinuxName, UID: u.UnixID, GID: u.UnixID})
+				accounts = append(accounts, UnixAccount{Name: u.Name, Login: u.LinuxName, UID: u.UnixID, GID: u.UnixID, Admin: u.Admin})
 			}
 		}
 		sort.Slice(accounts, func(i, j int) bool { return accounts[i].UID < accounts[j].UID })
@@ -112,7 +112,7 @@ func (s *Server) machine(w http.ResponseWriter, r *http.Request) {
 					recent = append(recent, t)
 				}
 			}
-			if len(recent) >= 30 {
+			if len(recent) >= 120 {
 				s.attempts[key] = recent
 				w.Header().Set("Retry-After", "60")
 				fail(w, 429, "machine login rate limit exceeded")
@@ -128,7 +128,7 @@ func (s *Server) machine(w http.ResponseWriter, r *http.Request) {
 			fail(w, 403, "device access denied")
 			return
 		}
-		reply(w, 200, UnixAccount{Name: u.Name, Login: u.LinuxName, UID: u.UnixID, GID: u.UnixID})
+		reply(w, 200, UnixAccount{Name: u.Name, Login: u.LinuxName, UID: u.UnixID, GID: u.UnixID, Admin: u.Admin})
 		return
 	}
 	fail(w, 404, "not found")

@@ -1,6 +1,6 @@
 # Linux-Provisionierung (Debian/Ubuntu)
 
-Der Root-Dienst provisioniert lokal unprivilegierte Unix-Konten und prüft Linad-Passwörter und Gerätefreigaben über PAM online. Er ist für Debian/Ubuntu mit `pam-auth-update`, `useradd`, `groupadd` und systemd vorgesehen. Tests mit echtem PAM laufen in einem isolierten Debian-Container; ein realer grafischer Login und distributionsspezifische SSH-Konfigurationen müssen vor dem Rollout auf einem Testsystem geprüft werden.
+Der Root-Dienst provisioniert lokal reguläre Unix-Konten und prüft Linad-Passwörter und Gerätefreigaben über PAM online. Er ist für Debian/Ubuntu mit `pam-auth-update`, `useradd`, `groupadd` und systemd vorgesehen. Tests mit echtem PAM laufen in einem isolierten Debian-Container; ein realer grafischer Login und distributionsspezifische SSH-Konfigurationen müssen vor dem Rollout auf einem Testsystem geprüft werden.
 
 ## Ablauf für den Administrator
 
@@ -38,7 +38,7 @@ sudo journalctl -u linad-linux
 sudo /usr/local/libexec/linad-linux sync
 ```
 
-Der Dienst speichert keine Benutzerpasswörter oder Offline-Passwort-Hashes. Ohne Verbindung zum Server sind neue Anmeldungen verwalteter Konten gesperrt. Normale lokale Konten, insbesondere Root, bleiben unabhängig davon verfügbar. Linad-Administratoren erhalten lokal keine Root-/sudo-Rechte. Homeverzeichnisse werden privat mit Modus 0700 angelegt. Gelöschte/gesperrte bzw. nicht mehr freigegebene Konten werden lokal abgelaufen gesetzt, nicht gelöscht; ihre Daten bleiben erhalten. Bereits laufende Sitzungen werden nicht beendet.
+Der Dienst speichert keine Benutzerpasswörter oder Offline-Passwort-Hashes. Ohne Verbindung zum Server sind neue Anmeldungen verwalteter Konten gesperrt. Normale lokale Konten, insbesondere Root, bleiben unabhängig davon verfügbar. Freigegebene Linad-Administratoren erhalten über eine eigene sudo-Regel Root-Rechte mit ihrem Linad-Passwort. Normale Benutzer erhalten keine sudo-Rechte. Homeverzeichnisse werden privat mit Modus 0700 angelegt. Gelöschte/gesperrte bzw. nicht mehr freigegebene Konten werden lokal abgelaufen gesetzt, nicht gelöscht; ihre Daten bleiben erhalten. Bereits laufende Sitzungen werden nicht beendet.
 
 Es werden nur PAM-basierte Dienste erfasst, die das aktivierte gemeinsame PAM-Profil verwenden. Der Installer schaltet SSH-Passwortanmeldung nicht automatisch ein. Für SSH müssen `UsePAM yes` und die gewünschte Passwort-/Keyboard-Interactive-Methode in der vorhandenen SSH-Konfiguration aktiviert sein. `sshd -T` kontrollieren. SSH-Schlüssel können bei erlaubtem Konto weiter funktionieren; die PAM-Kontophase muss auch dann aktiv bleiben. Nicht-PAM-basierte Dienste werden von dieser Integration nicht kontrolliert. Ein leerer Name in einer grafischen Benutzerliste ist möglich: dann den vollständigen Linux-Login manuell eingeben.
 
@@ -70,3 +70,29 @@ sudo sh scripts/uninstall-linux.sh
 ```
 
 Dadurch wird der Dienst gestoppt, verwaltete Konten werden abgelaufen gesetzt und das gemeinsame PAM-Profil wird deaktiviert. Homeverzeichnisse, Registry, Konfiguration und Binärdatei bleiben zur Wiederherstellung erhalten. Soll nur die PAM-Integration kurzfristig entfernt werden, als lokaler Root `pam-auth-update --disable linad` ausführen. Sicherungen der gemeinsamen PAM-Dateien liegen unter `/var/lib/linad-linux/pam-backup-*`; lokale Anpassungen vor einer manuellen Wiederherstellung prüfen.
+
+## Administratoren und sudo
+
+Der normale Linux-Login behält seine stabile UID. Ein Linad-Administrator, der auf diesem Gerät freigegeben und synchronisiert ist, kann Root-Befehle oder eine Root-Shell starten:
+
+```sh
+sudo id -u   # Ausgabe: 0
+sudo -i
+```
+
+Die Passwortabfrage erwartet das **Linad-Passwort**, nicht ein lokales Root-Passwort. Die Regel verwendet weder `NOPASSWD` noch eine dauerhafte UID 0. Voraussetzungen sind das Paket `sudo`, `visudo` und die übliche Einbindung von `/etc/sudoers.d` in `/etc/sudoers`.
+
+Der Dienst verwaltet ausschließlich `/etc/sudoers.d/linad-linux` (Root:0440). Vor dem atomaren Austausch wird die Syntax mit `visudo` geprüft. Fremde sudo-Regeln und lokale Gruppen werden nicht geändert. Eine gleichnamige, nicht vom Dienst verwaltete Datei führt zum Abbruch statt zum Überschreiben.
+
+Die Regel erzwingt den eigenen PAM-Dienst `linad-sudo` auch für `sudo -i`. Jeder neue sudo-Aufruf fordert eine Authentifizierung und prüft die aktuelle Administratorrolle, Kontensperre, Gerätefreigabe und Geräteidentität online. Ein Rollenentzug blockiert neue von Linad autorisierte sudo-Aufrufe bereits vor dem nächsten Sync. Ein Rollenaufstieg benötigt zunächst einen Sync, damit die lokale Regel angelegt wird. Bereits gestartete Root-Shells und Prozesse bleiben bestehen. Unabhängig von Linad manuell vergebene lokale sudo-Rechte bleiben in der Verantwortung des lokalen Administrators.
+
+### Bestehendes Gerät aktualisieren
+
+Zuerst den Server aktualisieren. Anschließend das neue Provisioner-Paket auf dem Linux-Gerät entpacken und als lokaler Root/Administrator ausführen:
+
+```sh
+sudo apt-get install sudo
+sudo sh scripts/install-linux.sh
+```
+
+Vorhandene Gerätekonfiguration und Schlüssel werden wiederverwendet; kein neuer Enrollment-Token ist nötig. Der Installer ergänzt den sudo-PAM-Dienst, synchronisiert und startet den Dienst neu. Ein Austausch nur der Binärdatei reicht für dieses Update nicht aus.

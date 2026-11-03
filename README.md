@@ -1,8 +1,8 @@
 # lin_ad
 
-Ein eigener Verzeichnisdienst in Go mit Server-API, GUI-/CLI-Clients für Linux und Windows sowie einem Linux-Provisionierungsdienst für Debian/Ubuntu. Enthalten sind Benutzer/Gruppen, Darkmode, Kontensperren, Passwörter, Geräteverwaltung und gerätebezogene Linux-Anmeldung über PAM. Windows-Systemanmeldung, LDAP/Kerberos, weitere Administratoren und Hochverfügbarkeit sind noch nicht implementiert. Keine AD-Kompatibilität.
+Ein eigener Verzeichnisdienst in Go mit Server-API, GUI-/CLI-Clients für Linux und Windows sowie einem Linux-Provisionierungsdienst für Debian/Ubuntu. Enthalten sind Benutzer/Gruppen, Darkmode, Kontensperren, Passwörter, Geräteverwaltung und gerätebezogene Linux-Anmeldung über PAM. Windows-Systemanmeldung, LDAP/Kerberos und Hochverfügbarkeit sind noch nicht implementiert. Keine AD-Kompatibilität.
 
-Die Linux-Installation ist in [docs/linux-provisioning.md](docs/linux-provisioning.md) beschrieben. Sie erstellt unprivilegierte lokale Konten für die pro Gerät freigegebenen Benutzer. Der Server ist bei jeder neuen verwalteten Anmeldung erforderlich; es gibt keine Offline-Passwortkopien.
+Die Linux-Installation ist in [docs/linux-provisioning.md](docs/linux-provisioning.md) beschrieben. Sie erstellt reguläre lokale Konten für die pro Gerät freigegebenen Benutzer; Administratoren erhalten zusätzlich sudo mit Linad-Passwort. Der Server ist bei jeder neuen verwalteten Anmeldung erforderlich; es gibt keine Offline-Passwortkopien.
 
 ## Bauen und testen
 
@@ -47,7 +47,7 @@ Alternativ lokal `LINAD_ADMIN_PASSWORD` setzen und `go run ./cmd/server` starten
 
 ## Webverwaltung
 
-Nach dem Start die Serveradresse im Browser öffnen: lokal `http://127.0.0.1:8080/`, im Netzwerk ausschließlich die eingerichtete HTTPS-Adresse. Als `admin` anmelden. Die Oberfläche bietet Benutzer- und Gruppenlisten, Anlegen/Löschen, Mitgliedschaften, Sperren/Entsperren, Passwortzurücksetzen und Geräte-Anmelderegeln. Geräte können ausschließlich Administratoren registrieren, ändern und entfernen. Im Kopfbereich ist die Darstellung „System“, „Hell“ oder „Dunkel“ wählbar; nur diese nicht geheime Einstellung wird lokal gespeichert. Normale Benutzer können ihr eigenes Passwort ändern. Der Bootstrap-Administrator kann weder gesperrt noch gelöscht werden.
+Nach dem Start die Serveradresse im Browser öffnen: lokal `http://127.0.0.1:8080/`, im Netzwerk ausschließlich die eingerichtete HTTPS-Adresse. Als `admin` anmelden. Die Oberfläche bietet Benutzer- und Gruppenlisten, Anlegen/Löschen, Mitgliedschaften, Sperren/Entsperren, Passwortzurücksetzen und Geräte-Anmelderegeln. Geräte können ausschließlich Administratoren registrieren, ändern und entfernen. Im Kopfbereich ist die Darstellung „System“, „Hell“ oder „Dunkel“ wählbar; nur diese nicht geheime Einstellung wird lokal gespeichert. Normale Benutzer können ihr eigenes Passwort ändern. Administratoren können weitere Administratoren ernennen oder deren Rolle entziehen. Die Rolle verleiht auch sudo auf freigegebenen und aktualisierten Linux-Geräten. Der Bootstrap-Administrator kann weder gesperrt, gelöscht noch zum normalen Benutzer herabgestuft werden. Unter „Meine Gruppen“ sehen alle Benutzer ihre eigenen Gruppenmitgliedschaften.
 
 Sitzungstoken bleiben ausschließlich im Arbeitsspeicher des geöffneten Tabs; ein Neuladen der Seite erfordert eine neue Anmeldung. Passwörter oder Token werden nicht in Local Storage geschrieben. Der Server liefert die Oberfläche selbst aus; kein Node.js oder separater Frontend-Dienst ist nötig. Bestehende Datenbestände werden weiterverwendet, vorhandene Konten sind standardmäßig aktiv.
 
@@ -97,6 +97,9 @@ user-add alice           # liest neues Passwort aus LINAD_PASSWORD
 user-delete alice
 user-disable alice
 user-enable alice
+user-admin alice         # Administratorrolle und sudo auf freigegebenen Linux-Geräten
+user-standard alice      # Administratorrolle entziehen
+my-groups                # eigene Gruppenmitgliedschaften
 user-password alice     # neues Passwort aus LINAD_NEW_PASSWORD
 password-change         # bisheriges aus LINAD_PASSWORD, neues aus LINAD_NEW_PASSWORD
 groups
@@ -118,7 +121,7 @@ device-enrollment DEVICE_ID           # einmaliger Linux-Installations-Token
 device-revoke DEVICE_ID               # Geräte-Schlüssel und offene Tokens widerrufen
 ```
 
-Nur `admin` verwaltet Benutzer und Gruppen. Normale Benutzer können sich anmelden, `me`, `logout`, `password-change` sowie `devices` zum Anzeigen freigegebener Geräte verwenden. Alle anderen Gerätebefehle erfordern Administratorrechte. Nach Passwortänderungen neu anmelden und `LINAD_TOKEN` ersetzen. `LINAD_NEW_PASSWORD` ebenfalls sicher setzen und nach Gebrauch entfernen. Benutzerlöschung entfernt Mitgliedschaften und macht bestehende Token unbrauchbar. Sitzungen laufen nach acht Stunden ab; Neustart meldet alle Benutzer ab. Passwort-Hashes verwenden PBKDF2-HMAC-SHA256 mit individuellem Salt und 600.000 Iterationen. Login ist global auf 30 Versuche pro Minute begrenzt; für öffentlichen Betrieb sind zusätzliche Schutzmaßnahmen am Reverse-Proxy und eine Sicherheitsprüfung nötig.
+Benutzer mit Administratorrolle verwalten Benutzer und Gruppen. Normale Benutzer können sich anmelden, `me`, `my-groups`, `logout`, `password-change` sowie `devices` zum Anzeigen freigegebener Geräte verwenden. Alle anderen Gerätebefehle erfordern Administratorrechte. Nach Passwortänderungen neu anmelden und `LINAD_TOKEN` ersetzen. `LINAD_NEW_PASSWORD` ebenfalls sicher setzen und nach Gebrauch entfernen. Benutzerlöschung entfernt Mitgliedschaften und macht bestehende Token unbrauchbar. Sitzungen laufen nach acht Stunden ab; Neustart meldet alle Benutzer ab. Passwort-Hashes verwenden PBKDF2-HMAC-SHA256 mit individuellem Salt und 600.000 Iterationen. Login ist global auf 30 Versuche pro Minute begrenzt; für öffentlichen Betrieb sind zusätzliche Schutzmaßnahmen am Reverse-Proxy und eine Sicherheitsprüfung nötig.
 
 ## Geräteverwaltung
 
@@ -138,6 +141,7 @@ JSON unter `/v1`, Authentifizierung mit `Authorization: Bearer TOKEN`:
 |---|---|---|
 | POST | /v1/login | `{"name":"admin","password":"…"}` |
 | GET | /v1/me | Eigenes Profil |
+| GET | /v1/me/groups | Eigene Gruppenmitgliedschaften |
 | POST | /v1/logout | Sitzung beenden |
 | GET | /v1/devices | Freigegebene Geräte; Admin sieht alle |
 | POST | /v1/devices | Admin: `{"name":"office-pc","os":"linux"}` (auch `windows`) |
@@ -148,7 +152,7 @@ JSON unter `/v1`, Authentifizierung mit `Authorization: Bearer TOKEN`:
 | DELETE | /v1/devices/{id}/credential | Admin: Geräte-Schlüssel und Enrollment-Token widerrufen |
 | GET / POST | /v1/users | Liste / `{"name":"alice","password":"…"}` |
 | DELETE | /v1/users/{name} | Benutzer löschen |
-| PATCH | /v1/users/{name} | `{"disabled":true}` / `{"disabled":false}` (Admin) |
+| PATCH | /v1/users/{name} | `{"disabled":true/false,"admin":true/false}` (Admin; mindestens ein Feld) |
 | POST | /v1/users/{name}/password | `{"password":"…"}` (Admin setzt Passwort) |
 | POST | /v1/password | `{"current_password":"…","new_password":"…"}` (eigenes Passwort) |
 | GET / POST | /v1/groups | Liste / `{"name":"engineering"}` |
@@ -210,3 +214,9 @@ python3 scripts/test-container.py --export-image
 ```
 
 Der Test verwendet Port 18081, prüft Administratorpflicht, Freigaben, Enrollment und Persistenz der Geräteidentität nach Neustart und entfernt seinen Container samt Testvolume anschließend wieder.
+
+## Linux-sudo-Update
+
+Für sudo-Rechte sowohl Server als auch das Linux-Provisioner-Paket aktualisieren. Auf bereits eingerichteten Linux-Geräten genügt danach `sudo sh scripts/install-linux.sh`; die Konfiguration bleibt erhalten. Nur eine neue Binärdatei zu kopieren installiert den zusätzlich benötigten PAM-Dienst nicht. Siehe [sudo und Update-Anleitung](docs/linux-provisioning.md#administratoren-und-sudo).
+
+Freigegebene Administratoren verwenden ihr Linad-Passwort für `sudo` und `sudo -i`. Rollenentzug, Kontensperre und Gerätewiderruf werden bei neuen sudo-Aufrufen online geprüft. Bereits laufende Root-Shells werden nicht beendet. Normale Benutzer bekommen keine Root-Rechte. Die Maschinen-Passwortprüfung erlaubt bis zu 120 Versuche pro Minute und Gerät; die öffentliche Web-Anmeldung behält ihr eigenes Limit von 30 Versuchen pro Minute.

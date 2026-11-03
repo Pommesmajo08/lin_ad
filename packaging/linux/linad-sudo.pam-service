@@ -1,0 +1,6 @@
+# Managed by linad-linux
+auth requisite pam_exec.so expose_authtok seteuid /usr/local/libexec/linad-linux pam-sudo-auth
+account requisite pam_exec.so seteuid /usr/local/libexec/linad-linux pam-sudo-account
+account required pam_unix.so
+session required pam_unix.so
+session optional pam_limits.so

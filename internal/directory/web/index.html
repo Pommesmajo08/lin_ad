@@ -19,6 +19,7 @@
 <section class="card"><h2>Gruppen</h2><form id="group-form" class="inline"><label>Gruppenname<input name="name" pattern="[a-z][a-z0-9._\-]{0,63}" required maxlength="64" autocomplete="off"></label><button>Gruppe anlegen</button></form><div id="groups"></div></section>
 <section class="card"><h2>Passwort zurücksetzen</h2><p class="muted">Alle Sitzungen des betroffenen Benutzers werden beendet.</p><form id="reset-form" class="inline"><label>Benutzer<select name="name" id="reset-user" required></select></label><label>Neues Passwort<input name="password" type="password" minlength="16" required autocomplete="new-password"></label><button>Passwort setzen</button></form></section>
 </div>
+<section class="card"><h2>Meine Gruppen</h2><div id="my-groups" class="members"></div></section>
 <section class="card"><h2>Eigenes Passwort ändern</h2><p class="muted">Danach wirst du auf allen Geräten abgemeldet.</p><form id="password-form" class="inline"><label>Aktuelles Passwort<input name="current_password" type="password" autocomplete="current-password" required></label><label>Neues Passwort<input name="new_password" type="password" minlength="16" autocomplete="new-password" required></label><label>Passwort wiederholen<input name="repeat" type="password" minlength="16" autocomplete="new-password" required></label><button>Passwort ändern</button></form></section>
 </div>
 </main><footer>lin_ad · Eigener Verzeichnisdienst · Entwicklungsversion</footer>

@@ -15,6 +15,7 @@ type UnixAccount struct {
 	Login string `json:"login"`
 	UID   int    `json:"uid"`
 	GID   int    `json:"gid"`
+	Admin bool   `json:"admin"`
 }
 
 // LinuxLogin uses a readable prefix and a unique immutable UID suffix.

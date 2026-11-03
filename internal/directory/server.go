@@ -234,6 +234,20 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 		reply(w, 200, u)
 		return
 	}
+	if r.URL.Path == "/v1/me/groups" && r.Method == "GET" {
+		groups := []string{}
+		for name, members := range s.state.Groups {
+			for _, member := range members {
+				if member == u.Name {
+					groups = append(groups, name)
+					break
+				}
+			}
+		}
+		sort.Strings(groups)
+		reply(w, 200, groups)
+		return
+	}
 	if r.URL.Path == "/v1/logout" && r.Method == "POST" {
 		delete(s.sessions, key)
 		reply(w, 200, map[string]bool{"ok": true})
@@ -302,19 +316,29 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 			}
 			var body struct {
 				Disabled *bool `json:"disabled"`
+				Admin    *bool `json:"admin"`
 			}
 			if !decode(w, r, &body) {
 				return
 			}
-			if body.Disabled == nil {
-				fail(w, 400, "disabled field required")
+			if body.Disabled == nil && body.Admin == nil {
+				fail(w, 400, "disabled or admin field required")
 				return
 			}
-			if target.Name == "admin" && *body.Disabled {
+			if target.Name == "admin" && body.Disabled != nil && *body.Disabled {
 				fail(w, 400, "bootstrap administrator cannot be disabled")
 				return
 			}
-			target.Disabled = *body.Disabled
+			if target.Name == "admin" && body.Admin != nil && !*body.Admin {
+				fail(w, 400, "bootstrap administrator cannot be demoted")
+				return
+			}
+			if body.Disabled != nil {
+				target.Disabled = *body.Disabled
+			}
+			if body.Admin != nil {
+				target.Admin = *body.Admin
+			}
 			next.Users[target.Name] = target
 		} else if len(parts) == 4 && parts[3] == "password" && r.Method == "POST" {
 			target, ok := next.Users[parts[2]]

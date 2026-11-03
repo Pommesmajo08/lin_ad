@@ -37,6 +37,10 @@ with tempfile.TemporaryDirectory() as tmp:
    group=page.locator('.group').filter(has=page.get_by_role('heading',name='engineering',exact=True))
    group.locator('select').select_option('alice');group.get_by_role('button',name='Hinzufügen',exact=True).click();page.get_by_text('Mitglied hinzugefügt.',exact=True).wait_for()
    row=page.locator('#users tr').filter(has=page.get_by_role('cell',name='alice',exact=True))
+   row.get_by_role('button',name='Zum Administrator',exact=True).click();page.get_by_text('Administratorrolle gespeichert.',exact=True).wait_for()
+   expect(row.get_by_role('cell',name='Administrator',exact=True)).to_be_visible()
+   row.get_by_role('button',name='Adminrechte entziehen',exact=True).click()
+   expect(row.get_by_role('cell',name='Benutzer',exact=True)).to_be_visible()
    row.get_by_role('button',name='Sperren',exact=True).click();page.get_by_text('Benutzerstatus gespeichert.',exact=True).wait_for();assert row.locator('.badge').inner_text()=='Gesperrt'
    row.get_by_role('button',name='Entsperren',exact=True).click();expect(row.locator('.badge')).to_have_text('Aktiv')
    page.locator('#reset-user').select_option('alice');fill('reset-form','password',resetpass);submit('reset-form');page.get_by_text('Passwort zurückgesetzt.',exact=True).wait_for()
@@ -44,6 +48,7 @@ with tempfile.TemporaryDirectory() as tmp:
    page.get_by_role('button',name='Abmelden',exact=True).click();page.locator('#login-panel').wait_for(state='visible')
    login('alice',resetpass);assert page.locator('#admin-panel').is_hidden()
    assert page.locator('#device-form').is_hidden()
+   expect(page.locator('#my-groups')).to_contain_text('engineering')
    fill('password-form','current_password',resetpass);fill('password-form','new_password',newpass);fill('password-form','repeat',newpass);submit('password-form');page.locator('#login-panel').wait_for(state='visible')
    login('alice',newpass)
    page.reload();page.locator('#login-panel').wait_for(state='visible')
@@ -55,6 +60,6 @@ with tempfile.TemporaryDirectory() as tmp:
    expect(page.locator('html')).to_have_attribute('data-theme','dark')
    assert not errors,errors
    browser.close()
-  print('PASS: Browser admin login, user/group creation, membership, disable/enable, reset, normal-user password change, re-login, memory-only sessions, mobile login, no console errors')
+  print('PASS: Browser admin login, user/group creation, membership, role promotion/demotion, own groups, disable/enable, reset, normal-user password change, re-login, memory-only sessions, mobile login, no console errors')
  finally:
   server.terminate();server.wait(timeout=5)

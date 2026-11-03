@@ -21,7 +21,7 @@ while [ "$#" -gt 0 ]; do
  esac
 done
 [ -f /etc/debian_version ] || { echo 'Only Debian/Ubuntu are supported by this installer.' >&2; exit 1; }
-for linad_command in useradd usermod groupadd pam-auth-update; do command -v "$linad_command" >/dev/null || { echo "Missing prerequisite: $linad_command" >&2; exit 1; }; done
+for linad_command in useradd usermod groupadd pam-auth-update sudo visudo; do command -v "$linad_command" >/dev/null || { echo "Missing prerequisite: $linad_command" >&2; exit 1; }; done
 if [ "$linad_start" = yes ]; then command -v systemctl >/dev/null; [ -d /run/systemd/system ] || { echo 'systemd is not running; use --no-start for image provisioning.' >&2; exit 1; }; fi
 case "$(uname -m)" in x86_64) linad_arch=amd64;; aarch64|arm64) linad_arch=arm64;; *) echo 'Unsupported architecture.' >&2; exit 1;; esac
 install -d -o root -g root -m 0700 /etc/linad-linux /var/lib/linad-linux
@@ -35,6 +35,8 @@ if [ ! -e /etc/linad-linux/client.json ]; then
  if [ "$linad_http" = yes ]; then set -- "$@" --allow-http; fi
  /usr/local/libexec/linad-linux "$@"
 fi
+if [ -e /etc/pam.d/linad-sudo ] && ! head -n 1 /etc/pam.d/linad-sudo | grep -qxF '# Managed by linad-linux'; then echo 'Existing sudo PAM service is not managed by linad.' >&2; exit 1; fi
+install -o root -g root -m 0644 "$linad_root/packaging/linux/linad-sudo.pam-service" /etc/pam.d/linad-sudo
 # Successful sync is required before modifying any active PAM configuration.
 /usr/local/libexec/linad-linux sync
 if [ -f /usr/share/pam-configs/linad ] && ! cmp -s /usr/share/pam-configs/linad "$linad_root/packaging/linux/linad.pam-profile"; then echo 'Existing PAM profile differs; review it before replacing.' >&2; exit 1; fi

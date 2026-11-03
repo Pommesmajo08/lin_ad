@@ -33,7 +33,7 @@ func run() error {
 	}
 	a := flag.Args()
 	if len(a) == 0 {
-		return fmt.Errorf("commands: login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER, devices, device-register [NAME], device-heartbeat ID, device-delete ID, device-access ID [USER...], device-access-groups ID [GROUP...], device-access-all ID, device-enrollment ID, device-revoke ID")
+		return fmt.Errorf("commands: user-admin NAME, user-standard NAME, my-groups, login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER, devices, device-register [NAME], device-heartbeat ID, device-delete ID, device-access ID [USER...], device-access-groups ID [GROUP...], device-access-all ID, device-enrollment ID, device-revoke ID")
 	}
 	method, path := "GET", ""
 	var body any
@@ -83,6 +83,11 @@ func run() error {
 		method, path = "POST", "/v1/devices/"+url.PathEscape(a[1])+"/heartbeat"
 	case a[0] == "device-delete" && len(a) == 2:
 		method, path = "DELETE", "/v1/devices/"+url.PathEscape(a[1])
+	case a[0] == "my-groups" && len(a) == 1:
+		path = "/v1/me/groups"
+	case (a[0] == "user-admin" || a[0] == "user-standard") && len(a) == 2:
+		method, path = "PATCH", "/v1/users/"+url.PathEscape(a[1])
+		body = map[string]bool{"admin": a[0] == "user-admin"}
 	case a[0] == "me" && len(a) == 1:
 		path = "/v1/me"
 	case a[0] == "logout" && len(a) == 1:

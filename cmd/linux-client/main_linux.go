@@ -73,7 +73,7 @@ func run() error {
 	if mode == "pam-account" && !strings.HasPrefix(login, "linad_") {
 		return nil
 	}
-	if mode == "pam-auth" && !strings.HasPrefix(login, "linad_") {
+	if (mode == "pam-auth" || mode == "pam-sudo-auth") && !strings.HasPrefix(login, "linad_") {
 		return errors.New("not a linad account")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -118,16 +118,16 @@ func run() error {
 		return linuxclient.Sync(ctx, c, *state)
 	case "deactivate":
 		return linuxclient.Provision(ctx, c.Config.DeviceID, *state, nil)
-	case "pam-auth", "pam-account":
+	case "pam-auth", "pam-account", "pam-sudo-auth", "pam-sudo-account":
 		password := ""
-		if mode == "pam-auth" {
+		if mode == "pam-auth" || mode == "pam-sudo-auth" {
 			data, err := io.ReadAll(io.LimitReader(os.Stdin, 513))
 			if err != nil || len(data) > 512 {
 				return errors.New("invalid PAM password length")
 			}
 			password = strings.TrimRight(string(data), "\x00")
 		}
-		if err = linuxclient.PAMCheck(ctx, c, *state, login, password, mode == "pam-auth"); err != nil {
+		if err = linuxclient.PAMCheck(ctx, c, *state, login, password, (mode == "pam-auth" || mode == "pam-sudo-auth"), strings.HasPrefix(mode, "pam-sudo-")); err != nil {
 			return errors.New("linad authentication or device access denied")
 		}
 		return nil

@@ -28,7 +28,7 @@ function signedOut() {
   token = ''; profile = null;
   $('workspace').hidden = true; $('session').hidden = true;
   $('admin-panel').hidden = true; $('login-panel').hidden = !guiConnected;
-  $('users').replaceChildren(); $('groups').replaceChildren(); $('reset-user').replaceChildren(); $('devices').replaceChildren();
+  $('users').replaceChildren(); $('groups').replaceChildren(); $('reset-user').replaceChildren(); $('devices').replaceChildren(); $('my-groups').replaceChildren();
   document.querySelectorAll('input[type=password]').forEach(input => { input.value = ''; });
 }
 async function api(method, path, body) {
@@ -96,6 +96,10 @@ async function refresh() {
   $('device-form').hidden = !profile.admin;
   $('linux-login').textContent = `Linux-Login: ${profile.linux_name || 'noch nicht zugewiesen'}`;
   $('workspace').hidden = false; $('session').hidden = false; $('login-panel').hidden = true;
+  const ownGroups = await api('GET', '/v1/me/groups');
+  $('my-groups').replaceChildren();
+  ownGroups.forEach(name => $('my-groups').append(element('span', name, 'member')));
+  if (!ownGroups.length) $('my-groups').append(element('span', 'Keine Gruppenmitgliedschaften.', 'muted'));
   const devices = await api('GET', '/v1/devices');
   $('device-count').textContent = `(${devices.length})`;
   $('devices').replaceChildren();
@@ -127,6 +131,13 @@ async function refresh() {
     const status = element('td'); status.append(element('span', user.disabled ? 'Gesperrt' : 'Aktiv', user.disabled ? 'badge disabled' : 'badge')); row.append(status);
     const controls = element('td');
     if (user.name !== 'admin') {
+      controls.append(button(user.admin ? 'Adminrechte entziehen' : 'Zum Administrator', async () => {
+        const note = user.admin ? 'Administratorrechte und von Linad vergebene sudo-Rechte entziehen' : 'Administratorrechte und sudo auf freigegebenen Linux-Geräten erteilen';
+        if (!confirm(`${user.name}: ${note}? Bestehende Websitzungen werden beendet.`)) return;
+        await api('PATCH', `/v1/users/${pathName(user.name)}`, { admin: !user.admin });
+        if (profile.name === user.name) { signedOut(); message('Rolle geändert. Bitte erneut anmelden.'); }
+        else { await refresh(); message('Administratorrolle gespeichert.'); }
+      }));
       controls.append(button(user.disabled ? 'Entsperren' : 'Sperren', async () => {
         if (!confirm(`${user.name} ${user.disabled ? 'entsperren' : 'sperren und alle Sitzungen beenden'}?`)) return;
         await mutate('PATCH', `/v1/users/${pathName(user.name)}`, { disabled: !user.disabled }, 'Benutzerstatus gespeichert.');

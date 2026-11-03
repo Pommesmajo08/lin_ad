@@ -113,8 +113,36 @@ with tempfile.TemporaryDirectory() as tmp:
         pam('localadmin',local_password)
         shell = run(['runuser','-u','localadmin','--','su','-',alice,'-c','id -u'], input=user_password+'\n')
         assert shell.stdout.strip() == str(users['alice']['unix_id'])
+        # Real sudo uses a dedicated password-authenticated PAM service.
+        def sudo(login, password, ok=True, login_shell=False):
+            command = ['runuser','-u',login,'--','sudo','-S','-p','']
+            if login_shell:
+                command.append('-i')
+            command += ['id','-u']
+            result = run(command,input=password+'\n',ok=ok)
+            if ok:
+                assert result.stdout.strip() == '0'
+        sudo(alice,user_password,ok=False)
+        api('PATCH','/v1/users/alice',{'admin':True})
+        run([AGENT,'sync'])
+        policy = Path('/etc/sudoers.d/linad-linux')
+        assert stat.S_IMODE(policy.stat().st_mode) == 0o440
+        assert 'NOPASSWD' not in policy.read_text()
+        sudo(alice,user_password)
+        sudo(alice,user_password,login_shell=True)
+        sudo(alice,'wrong-password',ok=False)
+        api('PATCH','/v1/users/alice',{'admin':False})
+        assert alice in policy.read_text()  # No sync: stale local grant still exists.
+        sudo(alice,user_password,ok=False)
+        pam(alice,user_password)  # Demotion must not break ordinary Linux login.
+        run([AGENT,'sync'])
+        assert not policy.exists()
+        api('PATCH','/v1/users/alice',{'admin':True})
+        run([AGENT,'sync'])
+        sudo(alice,user_password)
         # Live policy checks deny a new session immediately, before periodic sync.
         api('PUT',prefix+'/access',{'allowed_users':['bob']})
+        sudo(alice,user_password,ok=False)
         pam(alice,account_only=True,ok=False)
         run([AGENT,'sync'])
         alice_shadow = next(line for line in Path('/etc/shadow').read_text().splitlines() if line.startswith(alice+':'))
@@ -141,8 +169,10 @@ with tempfile.TemporaryDirectory() as tmp:
         api('POST','/v1/users/alice/password',{'password':new_password})
         pam(alice,user_password,ok=False)
         pam(alice,new_password)
+        sudo(alice,new_password)
         # Credential revocation is immediate and does not affect local accounts.
         api('DELETE',prefix+'/credential')
+        sudo(alice,new_password,ok=False)
         pam(alice,account_only=True,ok=False)
         pam('localadmin',local_password)
         daemon.terminate(); assert daemon.wait(timeout=10) == 0; daemon = None
@@ -156,15 +186,17 @@ with tempfile.TemporaryDirectory() as tmp:
         pam(alice,account_only=True,ok=False)
         CONFIG.chmod(0o600)
         server.terminate(); server.wait(timeout=5)
+        sudo(alice,new_password,ok=False)
         pam(alice,account_only=True,ok=False)
         pam('localadmin',local_password)
         # Uninstall works offline and preserves home data and recovery files.
         run(['sh',str(ROOT/'scripts/uninstall-linux.sh')])
         assert Path(entry.pw_dir).is_dir() and CONFIG.exists()
+        assert not Path('/etc/sudoers.d/linad-linux').exists()
         assert 'linad-linux' not in Path('/etc/pam.d/common-auth').read_text()
         pam('localadmin',local_password)
         pam(alice,account_only=True,ok=False)
-        print('PASS: real Debian PAM login/session, private homes, stable UID/GID, default deny, local-account collision protection, admin ACLs/groups, daemon sync, immediate revocation, password changes, one-use enrollment, CA validation, credential-file permissions, offline deny/local fallback, idempotent install and uninstall')
+        print('PASS: real Debian sudo/sudo-i, immediate role revocation, normal-user denial, PAM login/session, private homes, stable UID/GID, default deny, local-account collision protection, admin ACLs/groups, daemon sync, immediate revocation, password changes, one-use enrollment, CA validation, credential-file permissions, offline deny/local fallback, idempotent install and uninstall')
     finally:
         if daemon is not None and daemon.poll() is None:
             daemon.terminate(); daemon.wait(timeout=10)

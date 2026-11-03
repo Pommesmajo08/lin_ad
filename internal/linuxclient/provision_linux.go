@@ -138,7 +138,7 @@ func setExpired(ctx context.Context, login string, expired bool) error {
 	return errors.New("managed account has no shadow entry")
 }
 
-// Sync never deletes homes, adopts local accounts or grants privileged groups.
+// Sync manages local accounts and a validated sudo policy for authorized administrators.
 func Sync(ctx context.Context, c *Client, statePath string) error {
 	accounts, err := c.Accounts(ctx)
 	if err != nil {
@@ -214,7 +214,7 @@ func Provision(ctx context.Context, deviceID, statePath string, accounts []direc
 	}
 	for login, a := range desired {
 		recorded, managed := registry.Accounts[login]
-		if managed && recorded != a {
+		if managed && !sameIdentity(recorded, a) {
 			return errors.New("immutable account identity changed")
 		}
 		local, exists := users[login]
@@ -277,11 +277,20 @@ func Provision(ctx context.Context, deviceID, statePath string, accounts []direc
 			return err
 		}
 	}
-	return nil
+	if err := configureSudo(ctx, deviceID, desired); err != nil {
+		return err
+	}
+	for login, a := range desired {
+		registry.Accounts[login] = a
+	}
+	return AtomicJSON(statePath, registry)
 }
-func PAMCheck(ctx context.Context, c *Client, statePath, login, password string, auth bool) error {
+func sameIdentity(a, b directory.UnixAccount) bool {
+	return a.Name == b.Name && a.Login == b.Login && a.UID == b.UID && a.GID == b.GID
+}
+func PAMCheck(ctx context.Context, c *Client, statePath, login, password string, auth bool, requireAdmin bool) error {
 	if !strings.HasPrefix(login, "linad_") {
-		if auth {
+		if auth || requireAdmin {
 			return errors.New("not a linad account")
 		}
 		return nil
@@ -306,8 +315,11 @@ func PAMCheck(ctx context.Context, c *Client, statePath, login, password string,
 	if err != nil {
 		return err
 	}
-	if actual != expected {
+	if !sameIdentity(actual, expected) {
 		return errors.New("directory identity mismatch")
+	}
+	if requireAdmin && !actual.Admin {
+		return errors.New("administrator role required for sudo")
 	}
 	return nil
 }
