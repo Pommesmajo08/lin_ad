@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestDeviceLifecycleAndOwnership(t *testing.T) {
+func TestDeviceAdministrationAndPolicy(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "db.json")
 	s, err := New(path, "initial-admin-password")
 	if err != nil {
@@ -18,6 +18,7 @@ func TestDeviceLifecycleAndOwnership(t *testing.T) {
 	for _, name := range []string{"alice", "bob"} {
 		s.state.Users[name] = passwordUser(name, "initial-user-password", false)
 	}
+	_, _ = assignUnixIDs(&s.state)
 	for _, name := range []string{"admin", "alice", "bob"} {
 		s.sessions[tokenKey(name)] = session{name, time.Now().Add(time.Hour)}
 	}
@@ -30,60 +31,49 @@ func TestDeviceLifecycleAndOwnership(t *testing.T) {
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, r)
 		if w.Code != want {
-			t.Fatalf("%s %s: %d %s (want %d)", method, path, w.Code, w.Body.String(), want)
+			t.Fatalf("%s %s: %d %s; want %d", method, path, w.Code, w.Body.String(), want)
 		}
 		return w.Body.String()
 	}
 	request("GET", "/v1/devices", "", "", 401)
-	request("POST", "/v1/devices", "alice", `{"name":"pc","os":"linux","owner":"admin"}`, 400)
-	request("POST", "/v1/devices", "alice", `{"name":"bad/name","os":"linux"}`, 400)
-	request("POST", "/v1/devices", "alice", `{"name":"pc","os":"unsupported"}`, 400)
-	b := request("POST", "/v1/devices", "alice", `{"name":"01-workstation","os":"windows"}`, 201)
+	request("POST", "/v1/devices", "alice", `{"name":"pc","os":"linux"}`, 403)
+	request("POST", "/v1/devices", "admin", `{"name":"pc","os":"linux","owner":"alice"}`, 400)
+	request("POST", "/v1/devices", "admin", `{"name":"bad/name","os":"linux"}`, 400)
 	var d Device
-	if err := json.Unmarshal([]byte(b), &d); err != nil {
-		t.Fatal(err)
+	_ = json.Unmarshal([]byte(request("POST", "/v1/devices", "admin", `{"name":"01-workstation","os":"linux"}`, 201)), &d)
+	request("POST", "/v1/devices", "admin", `{"name":"01-workstation","os":"windows"}`, 409)
+	request("DELETE", "/v1/devices/"+d.ID, "alice", "", 403)
+	request("POST", "/v1/devices/"+d.ID+"/heartbeat", "alice", "", 403)
+	request("PUT", "/v1/devices/"+d.ID+"/access", "alice", `{"allow_all":true}`, 403)
+	if b := request("GET", "/v1/devices", "alice", "", 200); strings.TrimSpace(b) != "[]" {
+		t.Fatal("default device access was not denied")
 	}
-	if d.Owner != "alice" || d.ID == "" || d.LastSeen.IsZero() {
-		t.Fatal("invalid device", d)
+	request("PUT", "/v1/devices/"+d.ID+"/access", "admin", `{"allowed_users":["unknown"]}`, 400)
+	request("PUT", "/v1/devices/"+d.ID+"/access", "admin", `{"allowed_users":["alice"]}`, 200)
+	if b := request("GET", "/v1/devices", "alice", "", 200); !strings.Contains(b, d.ID) {
+		t.Fatal("allowed device missing")
 	}
-	request("POST", "/v1/devices", "alice", `{"name":"01-workstation","os":"windows"}`, 409)
 	if b := request("GET", "/v1/devices", "bob", "", 200); strings.TrimSpace(b) != "[]" {
-		t.Fatal("foreign inventory disclosed", b)
+		t.Fatal("unauthorized inventory leaked")
 	}
-	request("DELETE", "/v1/devices/"+d.ID, "bob", "", 404)
-	request("POST", "/v1/devices/"+d.ID+"/heartbeat", "bob", "", 404)
-	request("POST", "/v1/devices/"+d.ID+"/heartbeat", "alice", "", 200)
-	if !s.state.Devices[d.ID].LastSeen.After(d.LastSeen) {
-		t.Fatal("heartbeat did not advance")
-	}
-	if b := request("GET", "/v1/devices", "admin", "", 200); !strings.Contains(b, d.ID) {
-		t.Fatal("admin inventory missing")
-	}
+	request("POST", "/v1/devices/"+d.ID+"/heartbeat", "admin", "", 200)
 	reloaded, err := New(path, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if reloaded.state.Devices[d.ID].Owner != "alice" {
-		t.Fatal("device not persisted")
+	if err != nil || !deviceAllows(reloaded.state, reloaded.state.Devices[d.ID], reloaded.state.Users["alice"]) {
+		t.Fatal("policy persistence failed", err)
 	}
 	oldPath := s.path
 	s.path = "/dev/null/impossible"
-	request("DELETE", "/v1/devices/"+d.ID, "alice", "", 500)
-	if _, ok := s.state.Devices[d.ID]; !ok {
-		t.Fatal("failed deletion committed")
+	request("PUT", "/v1/devices/"+d.ID+"/access", "admin", `{"allow_all":true}`, 500)
+	if s.state.Devices[d.ID].AllowAll {
+		t.Fatal("failed policy committed")
 	}
 	s.path = oldPath
-	request("PATCH", "/v1/users/alice", "admin", `{"disabled":true}`, 200)
-	request("GET", "/v1/devices", "alice", "", 401)
 	request("DELETE", "/v1/users/alice", "admin", "", 200)
-	if len(s.state.Devices) != 0 {
-		t.Fatal("orphan device after user deletion")
+	if len(s.state.Devices[d.ID].AllowedUsers) != 0 {
+		t.Fatal("dangling user ACL")
 	}
-	request("POST", "/v1/devices", "bob", `{"name":"bob-pc","os":"linux"}`, 201)
-	for id := range s.state.Devices {
-		request("DELETE", "/v1/devices/"+id, "admin", "", 200)
-	}
+	request("DELETE", "/v1/devices/"+d.ID, "admin", "", 200)
 	if len(s.state.Devices) != 0 {
-		t.Fatal("admin deletion failed")
+		t.Fatal("device not deleted")
 	}
 }

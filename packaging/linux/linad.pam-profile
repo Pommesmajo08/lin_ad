@@ -1,0 +1,11 @@
+Name: linad directory login
+Default: yes
+Priority: 900
+Auth-Type: Primary
+Auth:
+ [success=end default=ignore] pam_exec.so expose_authtok seteuid /usr/local/libexec/linad-linux pam-auth
+Auth-Initial:
+ [success=end default=ignore] pam_exec.so expose_authtok seteuid /usr/local/libexec/linad-linux pam-auth
+Account-Type: Additional
+Account:
+ requisite pam_exec.so seteuid /usr/local/libexec/linad-linux pam-account

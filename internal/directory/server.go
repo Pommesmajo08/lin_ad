@@ -20,16 +20,19 @@ import (
 )
 
 type User struct {
-	Name     string `json:"name"`
-	Admin    bool   `json:"admin"`
-	Disabled bool   `json:"disabled"`
-	Salt     string `json:"salt,omitempty"`
-	Hash     string `json:"hash,omitempty"`
+	Name      string `json:"name"`
+	Admin     bool   `json:"admin"`
+	Disabled  bool   `json:"disabled"`
+	UnixID    int    `json:"unix_id"`
+	LinuxName string `json:"linux_name"`
+	Salt      string `json:"salt,omitempty"`
+	Hash      string `json:"hash,omitempty"`
 }
 type State struct {
-	Users   map[string]User     `json:"users"`
-	Groups  map[string][]string `json:"groups"`
-	Devices map[string]Device   `json:"devices"`
+	NextUnixID int                 `json:"next_unix_id"`
+	Users      map[string]User     `json:"users"`
+	Groups     map[string][]string `json:"groups"`
+	Devices    map[string]Device   `json:"devices"`
 }
 type session struct {
 	User    string
@@ -75,6 +78,15 @@ func New(path, password string) (*Server, error) {
 		if s.state.Devices == nil {
 			s.state.Devices = map[string]Device{}
 		}
+		changed, err := assignUnixIDs(&s.state)
+		if err != nil {
+			return nil, err
+		}
+		if changed {
+			if err = s.save(s.state); err != nil {
+				return nil, err
+			}
+		}
 		return s, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
@@ -84,6 +96,9 @@ func New(path, password string) (*Server, error) {
 		return nil, errors.New("initial LINAD_ADMIN_PASSWORD must contain at least 16 characters")
 	}
 	s.state = State{Users: map[string]User{"admin": passwordUser("admin", password, true)}, Groups: map[string][]string{}, Devices: map[string]Device{}}
+	if _, err = assignUnixIDs(&s.state); err != nil {
+		return nil, err
+	}
 	if err = s.save(s.state); err != nil {
 		return nil, err
 	}
@@ -133,6 +148,8 @@ func (s *Server) Handler() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { reply(w, 200, map[string]string{"status": "ok"}) })
 	m.HandleFunc("POST /v1/login", s.login)
+	m.HandleFunc("POST /v1/enroll", s.enroll)
+	m.HandleFunc("/v1/machine/", s.machine)
 	m.HandleFunc("/v1/", s.authorized)
 	web := webHandler()
 	m.Handle("GET /{$}", web)
@@ -273,6 +290,10 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			next.Users[b.Name] = passwordUser(b.Name, b.Password, false)
+			if _, err := assignUnixIDs(&next); err != nil {
+				fail(w, 500, "Unix identity allocation failed")
+				return
+			}
 		} else if len(parts) == 3 && r.Method == "PATCH" {
 			target, ok := next.Users[parts[2]]
 			if !ok {
@@ -313,6 +334,8 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 			}
 			updated := passwordUser(target.Name, body.Password, target.Admin)
 			updated.Disabled = target.Disabled
+			updated.UnixID = target.UnixID
+			updated.LinuxName = target.LinuxName
 			next.Users[target.Name] = updated
 		} else if len(parts) == 3 && r.Method == "DELETE" {
 			if parts[2] == "admin" {
@@ -325,9 +348,14 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 			}
 			delete(next.Users, parts[2])
 			for id, device := range next.Devices {
-				if device.Owner == parts[2] {
-					delete(next.Devices, id)
+				users := []string{}
+				for _, name := range device.AllowedUsers {
+					if name != parts[2] {
+						users = append(users, name)
+					}
 				}
+				device.AllowedUsers = users
+				next.Devices[id] = device
 			}
 			for g, members := range next.Groups {
 				filtered := []string{}
@@ -369,6 +397,16 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			delete(next.Groups, parts[2])
+			for id, device := range next.Devices {
+				groups := []string{}
+				for _, name := range device.AllowedGroups {
+					if name != parts[2] {
+						groups = append(groups, name)
+					}
+				}
+				device.AllowedGroups = groups
+				next.Devices[id] = device
+			}
 		} else if len(parts) == 5 && parts[3] == "members" && (r.Method == "PUT" || r.Method == "DELETE") {
 			members, ok := next.Groups[parts[2]]
 			if !ok {
@@ -451,6 +489,8 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, u User) 
 	_ = json.Unmarshal(data, &next)
 	updated := passwordUser(u.Name, body.New, u.Admin)
 	updated.Disabled = u.Disabled
+	updated.UnixID = u.UnixID
+	updated.LinuxName = u.LinuxName
 	next.Users[u.Name] = updated
 	if err := s.save(next); err != nil {
 		fail(w, 500, "directory persistence failed")

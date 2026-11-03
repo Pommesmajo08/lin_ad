@@ -1,6 +1,8 @@
 # lin_ad
 
-Ein eigener Verzeichnisdienst in Go mit Server-API sowie GUI- und CLI-Client für Linux und Windows. Dies ist eine erste Entwicklungsversion: Benutzer, Gruppen, Mitgliedschaften und Anmeldung an der API funktionieren. Eine Webverwaltung, Passwortänderungen, Kontensperren und Geräteinventar sind enthalten. Windows-Anmeldung, Linux PAM/NSS, LDAP/Kerberos, Systembeitritt mit Maschinen-Authentifizierung, weitere Administratoren und Hochverfügbarkeit sind noch nicht implementiert. Keine AD-Kompatibilität.
+Ein eigener Verzeichnisdienst in Go mit Server-API, GUI-/CLI-Clients für Linux und Windows sowie einem Linux-Provisionierungsdienst für Debian/Ubuntu. Enthalten sind Benutzer/Gruppen, Darkmode, Kontensperren, Passwörter, Geräteverwaltung und gerätebezogene Linux-Anmeldung über PAM. Windows-Systemanmeldung, LDAP/Kerberos, weitere Administratoren und Hochverfügbarkeit sind noch nicht implementiert. Keine AD-Kompatibilität.
+
+Die Linux-Installation ist in [docs/linux-provisioning.md](docs/linux-provisioning.md) beschrieben. Sie erstellt unprivilegierte lokale Konten für die pro Gerät freigegebenen Benutzer. Der Server ist bei jeder neuen verwalteten Anmeldung erforderlich; es gibt keine Offline-Passwortkopien.
 
 ## Bauen und testen
 
@@ -22,6 +24,8 @@ Ergebnisse unter `dist/` (jeweils amd64):
 | `linad-client-windows-amd64.exe` | Windows ohne GUI (CLI) |
 | `linad-client-gui-linux-amd64` | Linux mit GUI im Browser |
 | `linad-client-gui-windows-amd64.exe` | Windows mit GUI im Browser, ohne Konsolenfenster |
+| `linad-linux-amd64` / `linad-linux-arm64` | Root-Provisionierungsdienst und PAM-Helfer |
+| `linad-linux-provisioner-amd64.tar.gz` / `linad-linux-provisioner-arm64.tar.gz` | Linux-Installationspaket mit Dienst, Installer und Anleitung |
 
 Windows wird crosskompiliert; ein nativer Windows-Lauf ist separat zu testen. Ein exportiertes Image kann mit `docker load -i dist/linad-server-image.tar` importiert werden.
 
@@ -43,7 +47,7 @@ Alternativ lokal `LINAD_ADMIN_PASSWORD` setzen und `go run ./cmd/server` starten
 
 ## Webverwaltung
 
-Nach dem Start die Serveradresse im Browser öffnen: lokal `http://127.0.0.1:8080/`, im Netzwerk ausschließlich die eingerichtete HTTPS-Adresse. Als `admin` anmelden. Die Oberfläche bietet Benutzer- und Gruppenlisten, Anlegen/Löschen, Mitgliedschaften, Sperren/Entsperren und Passwortzurücksetzen. Normale Benutzer können ihr eigenes Passwort ändern. Der Bootstrap-Administrator kann weder gesperrt noch gelöscht werden.
+Nach dem Start die Serveradresse im Browser öffnen: lokal `http://127.0.0.1:8080/`, im Netzwerk ausschließlich die eingerichtete HTTPS-Adresse. Als `admin` anmelden. Die Oberfläche bietet Benutzer- und Gruppenlisten, Anlegen/Löschen, Mitgliedschaften, Sperren/Entsperren, Passwortzurücksetzen und Geräte-Anmelderegeln. Geräte können ausschließlich Administratoren registrieren, ändern und entfernen. Im Kopfbereich ist die Darstellung „System“, „Hell“ oder „Dunkel“ wählbar; nur diese nicht geheime Einstellung wird lokal gespeichert. Normale Benutzer können ihr eigenes Passwort ändern. Der Bootstrap-Administrator kann weder gesperrt noch gelöscht werden.
 
 Sitzungstoken bleiben ausschließlich im Arbeitsspeicher des geöffneten Tabs; ein Neuladen der Seite erfordert eine neue Anmeldung. Passwörter oder Token werden nicht in Local Storage geschrieben. Der Server liefert die Oberfläche selbst aus; kein Node.js oder separater Frontend-Dienst ist nötig. Bestehende Datenbestände werden weiterverwendet, vorhandene Konten sind standardmäßig aktiv.
 
@@ -56,7 +60,7 @@ Die GUI-Datei starten (unter Linux gegebenenfalls `chmod +x dist/linad-client-gu
 1. Serveradresse eingeben, z. B. `https://directory.example:8443`.
 2. Nur für lokale Tests HTTP ausdrücklich erlauben.
 3. Mit einem Verzeichnisbenutzer anmelden.
-4. Benutzer/Gruppen verwalten oder das eigene Gerät registrieren.
+4. Als Administrator Benutzer/Gruppen und Gerätezugriff verwalten; als normaler Benutzer das eigene Passwort ändern und freigegebene Geräte sehen.
 
 Die GUI bindet ausschließlich an `127.0.0.1` auf einem zufälligen Port. API-Aufrufe erfordern zusätzlich einen zufälligen lokalen Zugriffsschlüssel. Dieser steht im Fragment der privaten Startadresse, nicht in einem Server-Token. Diese Adresse nicht teilen. Server-TLS wird vom lokalen Go-Client anhand des System-Zertifikatsspeichers geprüft. Sitzungstoken bleiben im Arbeitsspeicher des Browser-Tabs.
 
@@ -105,17 +109,26 @@ device-register         # registriert lokalen Hostnamen und OS
 device-register office-pc
 device-heartbeat DEVICE_ID
 device-delete DEVICE_ID
+# Die folgenden Befehle sind ebenfalls nur für Administratoren:
+device-access DEVICE_ID alice bob     # vollständige Freigabe nur für diese Benutzer
+device-access-groups DEVICE_ID team   # vollständige Freigabe nur für diese Gruppen
+device-access-all DEVICE_ID           # ausdrücklich alle aktiven Benutzer
+device-access DEVICE_ID               # alle Freigaben entfernen
+device-enrollment DEVICE_ID           # einmaliger Linux-Installations-Token
+device-revoke DEVICE_ID               # Geräte-Schlüssel und offene Tokens widerrufen
 ```
 
-Nur `admin` verwaltet Benutzer und Gruppen. Normale Benutzer können sich anmelden, `me`, `logout`, `password-change` sowie die Gerätebefehle für ihr eigenes Inventar verwenden. Nach Passwortänderungen neu anmelden und `LINAD_TOKEN` ersetzen. `LINAD_NEW_PASSWORD` ebenfalls sicher setzen und nach Gebrauch entfernen. Benutzerlöschung entfernt Mitgliedschaften und macht bestehende Token unbrauchbar. Sitzungen laufen nach acht Stunden ab; Neustart meldet alle Benutzer ab. Passwort-Hashes verwenden PBKDF2-HMAC-SHA256 mit individuellem Salt und 600.000 Iterationen. Login ist global auf 30 Versuche pro Minute begrenzt; für öffentlichen Betrieb sind zusätzliche Schutzmaßnahmen am Reverse-Proxy und eine Sicherheitsprüfung nötig.
+Nur `admin` verwaltet Benutzer und Gruppen. Normale Benutzer können sich anmelden, `me`, `logout`, `password-change` sowie `devices` zum Anzeigen freigegebener Geräte verwenden. Alle anderen Gerätebefehle erfordern Administratorrechte. Nach Passwortänderungen neu anmelden und `LINAD_TOKEN` ersetzen. `LINAD_NEW_PASSWORD` ebenfalls sicher setzen und nach Gebrauch entfernen. Benutzerlöschung entfernt Mitgliedschaften und macht bestehende Token unbrauchbar. Sitzungen laufen nach acht Stunden ab; Neustart meldet alle Benutzer ab. Passwort-Hashes verwenden PBKDF2-HMAC-SHA256 mit individuellem Salt und 600.000 Iterationen. Login ist global auf 30 Versuche pro Minute begrenzt; für öffentlichen Betrieb sind zusätzliche Schutzmaßnahmen am Reverse-Proxy und eine Sicherheitsprüfung nötig.
 
 ## Geräteverwaltung
 
-Authentifizierte Benutzer registrieren Geräte unter ihrem eigenen Konto und sehen nur ihre eigenen Geräte. Administratoren sehen und entfernen alle Geräte. Hostname und Betriebssystem werden im GUI-Client vorbefüllt und im CLI automatisch ermittelt. In der direkt vom Server gelieferten Weboberfläche gibt der Benutzer diese Angaben selbst ein.
+Nur Administratoren registrieren und ändern Geräte. Namen sind im Verzeichnis eindeutig. Der Ersteller wird zu Dokumentationszwecken gespeichert, hat aber keinen automatischen Linux-Anmeldezugriff. Normale Benutzer sehen nur Geräte, für die sie eine effektive Freigabe haben.
 
-Jeder Eintrag erhält eine zufällige ID, Besitzer, Erstellungsdatum und letzte Rückmeldung. Ein Name darf pro Besitzer nur einmal vorkommen. Die Rückmeldung wird explizit über die GUI oder `device-heartbeat` aktualisiert; es gibt keinen Hintergrunddienst. Sie ist keine verifizierte Online-Anzeige. Beim Löschen eines Benutzers werden seine Geräte entfernt; beim Sperren bleibt das Inventar erhalten, aber Benutzerzugriffe werden verweigert. Alte Datenbestände erhalten beim Laden automatisch eine leere Geräteliste.
+Pro Gerät erlauben Administratoren einzelne Benutzer, Gruppen oder ausdrücklich alle aktiven Benutzer. Standardmäßig ist kein Benutzer freigegeben. Gesperrte Konten werden immer ausgeschlossen. Beim Löschen eines Benutzers/einer Gruppe werden die entsprechenden Freigabeverweise entfernt; das Gerät bleibt bestehen. Änderungen gelten sofort für neue PAM-Anmeldungen. Die lokale Kontoanlage erfolgt beim nächsten Sync (standardmäßig alle 30 Sekunden).
 
-Diese Registrierung ist eine Inventarfunktion. Sie installiert keine PAM-/Windows-Komponenten, erstellt keine Maschinen-Zugangsdaten und ersetzt keine Betriebssystem-Domänenanmeldung.
+Die Geräteverwaltung zeigt einen stabilen Geräte-Identifier, Plattform und letzte Rückmeldung. Der Root-Dienst aktualisiert die Rückmeldung bei erfolgreichem Sync. Manuelle Inventarrückmeldungen sind nur für Administratoren möglich und sind kein Nachweis einer laufenden Benutzersitzung. Linux-Geräte lassen sich per einmaligem Enrollment-Token provisionieren; Windows-Geräte bleiben derzeit Inventareinträge. Linux-Anmeldungen und Installation: [Linux-Provisionierung](docs/linux-provisioning.md).
+
+`device-access`, `device-access-groups` und `device-access-all` ersetzen jeweils die vollständige Freigabe. Für kombinierte Benutzer- und Gruppenregeln die Webverwaltung oder den API-Aufruf mit beiden Listen verwenden. Das Entfernen von Freigaben beendet keine bereits laufenden Sitzungen.
 
 ## API
 
@@ -126,10 +139,13 @@ JSON unter `/v1`, Authentifizierung mit `Authorization: Bearer TOKEN`:
 | POST | /v1/login | `{"name":"admin","password":"…"}` |
 | GET | /v1/me | Eigenes Profil |
 | POST | /v1/logout | Sitzung beenden |
-| GET | /v1/devices | Eigene Geräte; Admin sieht alle |
-| POST | /v1/devices | `{"name":"office-pc","os":"linux"}` (auch `windows`) |
-| POST | /v1/devices/{id}/heartbeat | Letzte Rückmeldung aktualisieren |
-| DELETE | /v1/devices/{id} | Eigenes Gerät entfernen; Admin darf alle entfernen |
+| GET | /v1/devices | Freigegebene Geräte; Admin sieht alle |
+| POST | /v1/devices | Admin: `{"name":"office-pc","os":"linux"}` (auch `windows`) |
+| POST | /v1/devices/{id}/heartbeat | Admin: manuelle Inventarrückmeldung |
+| DELETE | /v1/devices/{id} | Admin: Gerät entfernen und Schlüssel ungültig machen |
+| PUT | /v1/devices/{id}/access | Admin: `{"allow_all":false,"allowed_users":["alice"],"allowed_groups":["team"]}` |
+| POST | /v1/devices/{id}/enrollment | Admin: einmaliger Token, 15 Minuten gültig |
+| DELETE | /v1/devices/{id}/credential | Admin: Geräte-Schlüssel und Enrollment-Token widerrufen |
 | GET / POST | /v1/users | Liste / `{"name":"alice","password":"…"}` |
 | DELETE | /v1/users/{name} | Benutzer löschen |
 | PATCH | /v1/users/{name} | `{"disabled":true}` / `{"disabled":false}` (Admin) |
@@ -166,4 +182,31 @@ Der zusätzliche GUI-Test startet den lokalen GUI-Client und prüft dessen Zusam
 python3 scripts/test-gui.py
 ```
 
-Gerätenamen dürfen zusätzlich mit einer Ziffer beginnen. Gerätebesitzer werden immer aus der angemeldeten Sitzung abgeleitet.
+Gerätenamen dürfen zusätzlich mit einer Ziffer beginnen. Geräte-Ersteller werden immer aus der Administratorsitzung abgeleitet.
+
+Die Maschinen-API verwendet `Authorization: Device DEVICE_ID.SECRET` statt Benutzertokens:
+
+| Methode | Pfad | Zweck |
+|---|---|---|
+| POST | `/v1/enroll` | Einmaligen Enrollment-Token gegen Geräte-Schlüssel tauschen |
+| GET | `/v1/machine/users` | Freigegebene Unix-Konten für dieses Gerät; Sync-Rückmeldung |
+| POST | `/v1/machine/authenticate` | PAM: Linux-Login, Passwort und Gerätezugriff prüfen |
+| POST | `/v1/machine/access` | PAM-Kontophase: Gerätezugriff ohne Passwort prüfen |
+
+Die Maschinen-API liefert keine Passwort-Hashes. Bestehende Verzeichnisse erhalten beim Upgrade automatisch stabile Unix-IDs (reservierter Bereich 60001–64999). Alte Geräte ohne Freigaben sind standardmäßig gesperrt; der frühere Gerätebesitz verleiht keinen Zugriff. Vor dem ersten Upgrade eine Datensicherung erstellen.
+
+## Isolierter Linux/PAM-Integrationstest
+
+```sh
+sh scripts/test-linux.sh
+```
+
+Der Test benötigt Docker und lädt ein Debian-Testimage mit `pamtester`. Er startet ausschließlich einen wegwerfbaren Container und bindet das Repository schreibgeschützt ein. Im Container prüft er TLS und Enrollment, echte PAM-/`su`-Anmeldungen, lokale Kontenkollisionen, Benutzer-/Gruppenfreigaben, Kontensperren, Passwortänderungen, Hintergrund-Synchronisierung, Schlüsselwiderruf, Offline-Verhalten, Wiederholbarkeit des Installers und Deinstallation. Die PAM-Konfiguration des Hosts wird nicht verändert. Die Datei `tests/linux/integration.py` darf nicht direkt auf einem Arbeitsrechner ausgeführt werden.
+
+Server-Image mit temporärem Datenvolume funktional prüfen und optional exportieren (nach dem Build):
+
+```sh
+python3 scripts/test-container.py --export-image
+```
+
+Der Test verwendet Port 18081, prüft Administratorpflicht, Freigaben, Enrollment und Persistenz der Geräteidentität nach Neustart und entfernt seinen Container samt Testvolume anschließend wieder.

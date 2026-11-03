@@ -30,6 +30,8 @@ with tempfile.TemporaryDirectory() as tmp:
    def login(name,pw):
     fill('login-form','name',name);fill('login-form','password',pw);submit('login-form');page.locator('#workspace').wait_for(state='visible');page.get_by_text('Erfolgreich angemeldet.',exact=True).wait_for()
    login('admin',password)
+   page.locator('#theme').select_option('dark')
+   expect(page.locator('html')).to_have_attribute('data-theme','dark')
    fill('user-form','name','alice');fill('user-form','password',userpass);submit('user-form');page.get_by_text('Benutzer angelegt.',exact=True).wait_for()
    fill('group-form','name','engineering');submit('group-form');page.get_by_text('Gruppe angelegt.',exact=True).wait_for()
    group=page.locator('.group').filter(has=page.get_by_role('heading',name='engineering',exact=True))
@@ -41,13 +43,16 @@ with tempfile.TemporaryDirectory() as tmp:
    page.screenshot(path=tmp+'/admin-desktop.png',full_page=True)
    page.get_by_role('button',name='Abmelden',exact=True).click();page.locator('#login-panel').wait_for(state='visible')
    login('alice',resetpass);assert page.locator('#admin-panel').is_hidden()
+   assert page.locator('#device-form').is_hidden()
    fill('password-form','current_password',resetpass);fill('password-form','new_password',newpass);fill('password-form','repeat',newpass);submit('password-form');page.locator('#login-panel').wait_for(state='visible')
    login('alice',newpass)
    page.reload();page.locator('#login-panel').wait_for(state='visible')
    page.set_viewport_size({'width':390,'height':844})
    page.screenshot(path=tmp+'/login-mobile.png',full_page=True)
    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-   assert page.evaluate('localStorage.length === 0 && sessionStorage.length === 0')
+   assert page.evaluate("Object.keys(localStorage).every(key => key === 'linad-theme') && sessionStorage.length === 0")
+   assert page.locator('#theme').input_value() == 'dark'
+   expect(page.locator('html')).to_have_attribute('data-theme','dark')
    assert not errors,errors
    browser.close()
   print('PASS: Browser admin login, user/group creation, membership, disable/enable, reset, normal-user password change, re-login, memory-only sessions, mobile login, no console errors')

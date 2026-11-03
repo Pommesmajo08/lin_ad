@@ -2,3 +2,4 @@
 /data/
 *.tar
 .env
+__pycache__/

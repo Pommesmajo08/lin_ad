@@ -33,7 +33,7 @@ func run() error {
 	}
 	a := flag.Args()
 	if len(a) == 0 {
-		return fmt.Errorf("commands: login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER, devices, device-register [NAME], device-heartbeat ID, device-delete ID")
+		return fmt.Errorf("commands: login NAME, me, logout, password-change, users, user-add NAME, user-delete NAME, user-disable NAME, user-enable NAME, user-password NAME, groups, group-add NAME, group-delete NAME, member-add GROUP USER, member-delete GROUP USER, devices, device-register [NAME], device-heartbeat ID, device-delete ID, device-access ID [USER...], device-access-groups ID [GROUP...], device-access-all ID, device-enrollment ID, device-revoke ID")
 	}
 	method, path := "GET", ""
 	var body any
@@ -50,6 +50,23 @@ func run() error {
 	case (a[0] == "user-disable" || a[0] == "user-enable") && len(a) == 2:
 		method, path = "PATCH", "/v1/users/"+url.PathEscape(a[1])
 		body = map[string]bool{"disabled": a[0] == "user-disable"}
+	case a[0] == "device-enrollment" && len(a) == 2:
+		method, path = "POST", "/v1/devices/"+url.PathEscape(a[1])+"/enrollment"
+	case a[0] == "device-revoke" && len(a) == 2:
+		method, path = "DELETE", "/v1/devices/"+url.PathEscape(a[1])+"/credential"
+	case (a[0] == "device-access" || a[0] == "device-access-groups" || a[0] == "device-access-all") && len(a) >= 2:
+		if a[0] == "device-access-all" && len(a) != 2 {
+			return fmt.Errorf("device-access-all takes only a device ID")
+		}
+		method, path = "PUT", "/v1/devices/"+url.PathEscape(a[1])+"/access"
+		users, groups := []string{}, []string{}
+		if a[0] == "device-access" {
+			users = a[2:]
+		}
+		if a[0] == "device-access-groups" {
+			groups = a[2:]
+		}
+		body = map[string]any{"allow_all": a[0] == "device-access-all", "allowed_users": users, "allowed_groups": groups}
 	case a[0] == "devices" && len(a) == 1:
 		path = "/v1/devices"
 	case a[0] == "device-register" && (len(a) == 1 || len(a) == 2):

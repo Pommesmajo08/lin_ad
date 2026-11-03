@@ -62,12 +62,27 @@ with tempfile.TemporaryDirectory() as tmp:
             page.locator('#login-form [name=password]').fill(env['LINAD_ADMIN_PASSWORD'])
             page.get_by_role('button', name='Anmelden', exact=True).click()
             page.get_by_text('Erfolgreich angemeldet.', exact=True).wait_for()
+            page.locator('#user-form [name=name]').fill('alice')
+            page.locator('#user-form [name=password]').fill(secrets.token_urlsafe(24))
+            page.get_by_role('button', name='Benutzer anlegen', exact=True).click()
+            page.get_by_text('Benutzer angelegt.', exact=True).wait_for()
+            page.locator('#theme').select_option('dark')
+            expect(page.locator('html')).to_have_attribute('data-theme','dark')
             assert page.locator('#device-form [name=name]').input_value()
             page.locator('#device-form [name=name]').fill('gui-workstation')
             page.get_by_role('button', name='Gerät registrieren', exact=True).click()
             page.get_by_text('Gerät registriert.', exact=True).wait_for()
             row = page.locator('#devices tr').filter(has=page.get_by_role('cell', name='gui-workstation', exact=True))
             expect(row).to_contain_text('admin')
+            policy = page.locator('.device-policy').filter(has=page.get_by_role('heading', name='Anmeldezugriff · gui-workstation', exact=True))
+            policy.locator('select').nth(0).select_option('alice')
+            policy.get_by_role('button', name='Anmeldezugriff speichern', exact=True).click()
+            page.get_by_text('Anmeldezugriff gespeichert.', exact=True).wait_for()
+            policy.get_by_role('button', name='Linux provisionieren', exact=True).click()
+            page.locator('#enrollment-panel').wait_for(state='visible')
+            assert len(page.locator('#enrollment-token').input_value()) == 64
+            page.get_by_role('button', name='Token verbergen', exact=True).click()
+            assert page.locator('#enrollment-token').input_value() == ''
             row.get_by_role('button', name='Rückmeldung', exact=True).click()
             page.get_by_text('Rückmeldung gespeichert.', exact=True).wait_for()
             # Verify both clients see the same persistent directory.
@@ -81,6 +96,7 @@ with tempfile.TemporaryDirectory() as tmp:
                 ], env=cli_env, text=True))
             devices = cli('devices')
             assert devices[0]['name'] == 'gui-workstation'
+            assert devices[0]['allowed_users'] == ['alice']
             cli('device-register', 'cli-workstation')
             page.get_by_role('button', name='Aktualisieren', exact=True).click()
             page.get_by_text('Verzeichnis aktualisiert.', exact=True).wait_for()
@@ -94,7 +110,7 @@ with tempfile.TemporaryDirectory() as tmp:
             page.set_viewport_size({'width':390, 'height':844})
             page.screenshot(path=tmp + '/gui-mobile.png', full_page=True)
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
-            assert page.evaluate('localStorage.length === 0 && sessionStorage.length === 0')
+            assert page.evaluate("Object.keys(localStorage).every(key => key === 'linad-theme') && sessionStorage.length === 0")
             page.get_by_role('button', name='Client beenden', exact=True).click()
             page.get_by_text('Der lokale Client wurde beendet. Du kannst diesen Tab schließen.', exact=True).wait_for()
             assert not errors, errors

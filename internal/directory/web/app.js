@@ -4,12 +4,27 @@ const localSecret = /^#gui=[a-f0-9]{64}$/.test(location.hash) ? location.hash.sl
 let guiConnected = !localSecret;
 const $ = id => document.getElementById(id);
 const pathName = name => encodeURIComponent(name);
+const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+let themeChoice = 'system';
+try { themeChoice = localStorage.getItem('linad-theme') || 'system'; } catch (_) { /* Storage can be disabled. */ }
+if (!['system', 'light', 'dark'].includes(themeChoice)) themeChoice = 'system';
+function applyTheme() { document.documentElement.dataset.theme = themeChoice === 'system' ? (systemTheme.matches ? 'dark' : 'light') : themeChoice; }
+$('theme').value = themeChoice; applyTheme();
+$('theme').addEventListener('change', () => {
+  themeChoice = $('theme').value;
+  try { localStorage.setItem('linad-theme', themeChoice); } catch (_) { /* Theme still works without storage. */ }
+  applyTheme();
+});
+systemTheme.addEventListener('change', applyTheme);
+function hideEnrollment() { $('enrollment-token').value = ''; $('enrollment-panel').hidden = true; }
+$('close-enrollment').addEventListener('click', hideEnrollment);
 function message(text, error = false) {
   $('message').textContent = text;
   $('message').className = error ? 'error' : '';
   $('message').hidden = !text;
 }
 function signedOut() {
+  hideEnrollment(); $('device-policies').replaceChildren(); $('device-policies').hidden = true;
   token = ''; profile = null;
   $('workspace').hidden = true; $('session').hidden = true;
   $('admin-panel').hidden = true; $('login-panel').hidden = !guiConnected;
@@ -78,6 +93,8 @@ async function refresh() {
   $('identity').textContent = profile.name;
   $('welcome').textContent = profile.admin ? 'Verzeichnisübersicht' : `Hallo, ${profile.name}.`;
   $('admin-panel').hidden = !profile.admin;
+  $('device-form').hidden = !profile.admin;
+  $('linux-login').textContent = `Linux-Login: ${profile.linux_name || 'noch nicht zugewiesen'}`;
   $('workspace').hidden = false; $('session').hidden = false; $('login-panel').hidden = true;
   const devices = await api('GET', '/v1/devices');
   $('device-count').textContent = `(${devices.length})`;
@@ -86,11 +103,12 @@ async function refresh() {
     const row = element('tr');
     row.append(element('td', device.name), element('td', device.os === 'windows' ? 'Windows' : 'Linux'), element('td', device.owner), element('td', new Date(device.last_seen).toLocaleString()));
     const controls = element('td');
-    controls.append(button('Rückmeldung', () => mutate('POST', `/v1/devices/${pathName(device.id)}/heartbeat`, undefined, 'Rückmeldung gespeichert.')));
-    controls.append(button('Entfernen', async () => {
+    if (profile.admin) controls.append(button('Rückmeldung', () => mutate('POST', `/v1/devices/${pathName(device.id)}/heartbeat`, undefined, 'Rückmeldung gespeichert.')));
+    if (profile.admin) controls.append(button('Entfernen', async () => {
       if (!confirm(`Gerät ${device.name} aus dem Verzeichnis entfernen?`)) return;
       await mutate('DELETE', `/v1/devices/${pathName(device.id)}`, undefined, 'Gerät entfernt.');
     }, 'danger'));
+    if (!profile.admin) controls.append(element('span', 'Zugriff erlaubt', 'muted'));
     row.append(controls); $('devices').append(row);
   });
   if (!devices.length) {
@@ -99,12 +117,13 @@ async function refresh() {
   if (!profile.admin) return;
   const users = await api('GET', '/v1/users');
   const groups = await api('GET', '/v1/groups');
+  renderDevicePolicies(devices, users, groups);
   $('user-count').textContent = users.length;
   $('group-count').textContent = Object.keys(groups).length;
   $('users').replaceChildren(); $('reset-user').replaceChildren();
   users.forEach(user => {
     const row = element('tr');
-    row.append(element('td', user.name), element('td', user.admin ? 'Administrator' : 'Benutzer'));
+    row.append(element('td', user.name), element('td', user.linux_name), element('td', user.admin ? 'Administrator' : 'Benutzer'));
     const status = element('td'); status.append(element('span', user.disabled ? 'Gesperrt' : 'Aktiv', user.disabled ? 'badge disabled' : 'badge')); row.append(status);
     const controls = element('td');
     if (user.name !== 'admin') {
@@ -202,5 +221,52 @@ if (localSecret) {
     nameInput.defaultValue = info.name;
     $('device-form').elements.os.value = info.os === 'windows' ? 'windows' : 'linux';
     for (const option of $('device-form').elements.os.options) option.defaultSelected = option.value === info.os;
+  });
+}
+
+function renderDevicePolicies(devices, users, groups) {
+  const area = $('device-policies'); area.replaceChildren(); area.hidden = false;
+  devices.forEach(device => {
+    const card = element('section', undefined, 'card device-policy');
+    card.append(element('h2', `Anmeldezugriff · ${device.name}`));
+    const state = device.provisioned ? 'Geräte-Schlüssel aktiv' : 'Noch nicht provisioniert';
+    card.append(element('p', `${device.os === 'linux' ? state : 'Windows: nur Inventar'} · ID ${device.id}`, 'muted fine'));
+    const form = element('form', undefined, 'policy-form');
+    const allLabel = element('label', undefined, 'checkbox');
+    const all = element('input'); all.type = 'checkbox'; all.name = 'allow_all'; all.checked = device.allow_all;
+    allLabel.append(all, element('span', 'Alle aktiven Benutzer erlauben')); form.append(allLabel);
+    function selection(title, values, selected) {
+      const label = element('label', title); const select = element('select'); select.multiple = true; select.size = 5;
+      values.forEach(([name, text]) => { const option = element('option', text); option.value = name; option.selected = selected.includes(name); select.append(option); });
+      label.append(select); form.append(label); return select;
+    }
+    const userSelect = selection('Einzelne Benutzer', users.map(user => [user.name, `${user.name}${user.disabled ? ' (gesperrt)' : ''} → ${user.linux_name}`]), device.allowed_users || []);
+    const groupSelect = selection('Gruppen', Object.keys(groups).sort().map(name => [name, name]), device.allowed_groups || []);
+    const save = element('button', 'Anmeldezugriff speichern'); save.type = 'submit'; form.append(save);
+    form.addEventListener('submit', event => {
+      event.preventDefault(); action(() => mutate('PUT', `/v1/devices/${pathName(device.id)}/access`, {
+        allow_all: all.checked,
+        allowed_users: [...userSelect.selectedOptions].map(option => option.value),
+        allowed_groups: [...groupSelect.selectedOptions].map(option => option.value)
+      }, 'Anmeldezugriff gespeichert.'));
+    });
+    card.append(form, element('p', 'Mehrfachauswahl mit Strg/Cmd. Ohne Freigabe darf sich niemand anmelden. Gesperrte Konten bleiben immer ausgeschlossen.', 'muted fine'));
+    if (device.os === 'linux') {
+      const actions = element('div', undefined, 'policy-actions');
+      actions.append(button('Linux provisionieren', async () => {
+        const enrollment = await api('POST', `/v1/devices/${pathName(device.id)}/enrollment`);
+        $('enrollment-device').textContent = `${device.name} · Geräte-ID: ${device.id}`;
+        $('enrollment-token').value = enrollment.enrollment_token;
+        $('enrollment-expiry').textContent = `Gültig bis ${new Date(enrollment.expires_at).toLocaleString()}`;
+        $('enrollment-panel').hidden = false; $('enrollment-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }));
+      actions.append(button('Gerätezugang widerrufen', async () => {
+        if (!confirm(`Geräte-Schlüssel für ${device.name} widerrufen? Neue Linux-Anmeldungen werden damit gesperrt.`)) return;
+        await api('DELETE', `/v1/devices/${pathName(device.id)}/credential`);
+        hideEnrollment(); await refresh(); message('Gerätezugang widerrufen.');
+      }, 'danger'));
+      card.append(actions);
+    }
+    area.append(card);
   });
 }

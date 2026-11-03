@@ -1,0 +1,5 @@
+# Standalone service for diagnostics with pamtester, not a replacement for local PAM.
+auth requisite pam_exec.so expose_authtok seteuid /usr/local/libexec/linad-linux pam-auth
+account requisite pam_exec.so seteuid /usr/local/libexec/linad-linux pam-account
+account required pam_unix.so
+session required pam_unix.so
