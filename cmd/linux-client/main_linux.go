@@ -59,7 +59,7 @@ func run() error {
 	server := flags.String("server", "", "HTTPS directory server")
 	deviceID := flags.String("device-id", "", "administrator-created device ID")
 	caFile := flags.String("ca-file", "", "optional CA PEM file")
-	allowHTTP := flags.Bool("allow-http", false, "allow HTTP on loopback for tests")
+	allowHTTP := flags.Bool("allow-http", false, "explicitly allow unencrypted HTTP")
 	replace := flags.Bool("replace", false, "replace credentials for the same device and server")
 	interval := flags.Duration("interval", 30*time.Second, "synchronization interval")
 	if err := flags.Parse(os.Args[2:]); err != nil {

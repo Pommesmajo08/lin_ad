@@ -43,9 +43,8 @@ func validateConfig(c Config) error {
 		return errors.New("invalid server URL")
 	}
 	if u.Scheme != "https" {
-		ip := net.ParseIP(u.Hostname())
-		if u.Scheme != "http" || !c.AllowHTTP || !(u.Hostname() == "localhost" || (ip != nil && ip.IsLoopback())) {
-			return errors.New("HTTPS required (development HTTP is restricted to loopback)")
+		if u.Scheme != "http" || !c.AllowHTTP {
+			return errors.New("HTTPS required; use --allow-http to explicitly allow HTTP")
 		}
 	}
 	if len(c.DeviceID) != 32 || strings.Trim(c.DeviceID, "0123456789abcdef") != "" {
