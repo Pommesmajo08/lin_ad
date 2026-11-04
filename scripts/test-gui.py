@@ -62,12 +62,14 @@ with tempfile.TemporaryDirectory() as tmp:
             page.locator('#login-form [name=password]').fill(env['LINAD_ADMIN_PASSWORD'])
             page.get_by_role('button', name='Anmelden', exact=True).click()
             page.get_by_text('Erfolgreich angemeldet.', exact=True).wait_for()
+            page.locator('[data-view=accounts]').click()
             page.locator('#user-form [name=name]').fill('alice')
             page.locator('#user-form [name=password]').fill(secrets.token_urlsafe(24))
             page.get_by_role('button', name='Benutzer anlegen', exact=True).click()
             page.get_by_text('Benutzer angelegt.', exact=True).wait_for()
             page.locator('#theme').select_option('dark')
             expect(page.locator('html')).to_have_attribute('data-theme','dark')
+            page.locator('[data-view=devices]').click()
             assert page.locator('#device-form [name=name]').input_value()
             page.locator('#device-form [name=name]').fill('gui-workstation')
             page.get_by_role('button', name='Gerät registrieren', exact=True).click()
@@ -99,6 +101,8 @@ with tempfile.TemporaryDirectory() as tmp:
             assert devices[0]['allowed_users'] == ['alice']
             # Plan, trigger and inspect an assigned automation job through the GUI.
             from datetime import datetime, timedelta
+            page.locator('[data-view=automation]').click()
+            page.locator('#job-create > summary').click()
             page.locator('#job-form [name=name]').fill('Scheduled inventory')
             page.locator('#job-devices').select_option(devices[0]['id'])
             page.locator('#job-form [name=start_at]').fill((datetime.now()+timedelta(days=1)).strftime('%Y-%m-%dT%H:%M'))
@@ -129,9 +133,11 @@ with tempfile.TemporaryDirectory() as tmp:
             assert page.evaluate('window.badJobOutput === undefined')
             page.get_by_role('button',name='Jobstatus aktualisieren',exact=True).click()
             expect(page.locator('#job-runs details')).to_have_attribute('open','')
+            jobcard.locator('.job-settings > summary').click()
             jobcard.locator('input[type=number]').fill('60')
             jobcard.get_by_role('button',name='Zeitplan speichern',exact=True).click()
-            page.get_by_text('Zeitplan gespeichert.',exact=True).wait_for()
+            expect(jobcard.locator('input[type=number]')).to_have_value('60')
+            expect(page.locator('body')).not_to_have_attribute('data-busy','true')
             assert cli('jobs')[0]['interval_minutes']==60
             jobcard.get_by_role('button',name='Zeitplan pausieren',exact=True).click()
             expect(jobcard).to_contain_text('Zeitplan pausiert')
@@ -144,6 +150,7 @@ with tempfile.TemporaryDirectory() as tmp:
             page.get_by_text('Verzeichnis aktualisiert.', exact=True).wait_for()
             expect(page.locator('#devices tr')).to_have_count(2)
             assigned=[d['id'] for d in cli('devices')]
+            jobcard.locator('.job-settings > summary').click()
             jobcard.locator('select').select_option(assigned)
             jobcard.get_by_role('button',name='Gerätezuordnung speichern',exact=True).click()
             page.get_by_text('Gerätezuordnung gespeichert.',exact=True).wait_for()
@@ -153,6 +160,7 @@ with tempfile.TemporaryDirectory() as tmp:
             assert cli('jobs')==[] and len(cli('job-runs'))==2
             # Upload and edit a script; the already queued run must retain its source.
             source="set -eu\n# <script>window.badScriptSource=1</script>\nprintf 'original\\n'\n"
+            page.locator('#job-create > summary').click()
             page.locator('#job-form [name=kind]').select_option('custom-script')
             expect(page.locator('#job-script-fields')).to_be_visible()
             page.locator('#job-script-file').set_input_files({'name':'custom.sh','mimeType':'text/plain','buffer':source.encode()})
@@ -167,11 +175,13 @@ with tempfile.TemporaryDirectory() as tmp:
             card=page.locator('.job-card').filter(has=page.get_by_role('heading',name='Custom script',exact=True))
             card.get_by_role('button',name='Skript anzeigen / bearbeiten',exact=True).click()
             expect(card.locator('textarea')).to_have_value(source)
-            replacement="printf 'changed\\n'\n"
+            replacement="print('changed')\n"
+            card.locator('.script-editor select').select_option('python3')
             card.locator('textarea').fill(replacement)
             card.get_by_role('button',name='Skript speichern',exact=True).click()
             page.get_by_text('Skript für neue Läufe gespeichert.',exact=True).wait_for()
             assert cli('job-show',custom['id'])['script']==replacement
+            assert cli('job-show',custom['id'])['interpreter']=='python3'
             nonce=secrets.token_hex(32)
             old_run=machine_api('/v1/machine/jobs/claim',{'request_id':nonce})['run']
             assert old_run['script']==source and old_run['script_sha256']==custom['script_sha256']
@@ -199,6 +209,7 @@ with tempfile.TemporaryDirectory() as tmp:
             device_id = next(device['id'] for device in cli('devices') if device['name'] == 'cli-workstation')
             assert cli('device-heartbeat', device_id)['id'] == device_id
             assert cli('device-delete', device_id)['ok']
+            page.locator('[data-view=devices]').click()
             row.get_by_role('button', name='Entfernen', exact=True).click()
             page.get_by_text('Gerät entfernt.', exact=True).wait_for()
             assert cli('devices') == []

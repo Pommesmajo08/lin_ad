@@ -14,3 +14,26 @@
 .job-card{overflow-wrap:anywhere}
 
 .script-fields{grid-column:1/-1;display:grid;gap:16px;min-width:0}.script-fields textarea,.script-editor textarea,#run-script-source{font-family:ui-monospace,Consolas,monospace;font-size:13px;tab-size:2}.script-warning{padding:12px 14px;background:#fff2df;border:1px solid #dfc298;border-radius:7px;font-size:13px;color:#6f4a1c}.script-editor{margin:16px 0;min-width:0}dialog{width:min(900px,calc(100vw - 32px));max-height:90vh;overflow:auto;border:1px solid #c5d2da;border-radius:12px;padding:24px;color:inherit;background:#fff}dialog::backdrop{background:#0009}#run-script-close{margin-top:16px}[data-theme=dark]dialog{background:#19252e;border-color:#4a606e}[data-theme=dark].script-warning,[data-theme=dark] .script-warning{background:#473822;border-color:#886638;color:#f4ce95}
+
+/* Focused work areas with persistent feedback. */
+#workspace-nav{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 24px;padding:6px;border:1px solid #dce4e9;border-radius:12px;background:#fff}
+#workspace-nav button{background:transparent;color:#607582;flex:1}
+#workspace-nav button[aria-current=page]{background:#147d70;color:#fff}
+#message{position:sticky;top:12px;z-index:10;box-shadow:0 4px 18px #0001;overflow-wrap:anywhere}
+#job-create{border:1px solid #dce4e9;border-radius:10px;margin-bottom:28px;padding:18px}
+.create-job-summary{color:#147d70;font-weight:700;white-space:normal}
+#job-create[open]>.create-job-summary{margin-bottom:24px}
+.job-settings{margin:16px 0}.job-settings>summary{font-weight:600;color:#607582;margin-bottom:16px;white-space:normal}
+.job-settings .inline{padding:16px;background:#f7f9fa;border-radius:8px}
+.job-card>p{margin:8px 0}.job-card>.policy-actions{margin-top:16px}
+.form-feedback{grid-column:1/-1;flex-basis:100%;padding:12px;border-radius:7px;margin:0;background:#fff0f0;color:#9d3030;overflow-wrap:anywhere}
+form[aria-busy=true]{opacity:.75}
+[data-theme=dark] #workspace-nav,[data-theme=dark] #job-create{background:#19252e;border-color:#354854}
+[data-theme=dark] #workspace-nav button,[data-theme=dark] .job-settings>summary{color:#a7bdca}
+[data-theme=dark] #workspace-nav button[aria-current=page]{color:white}
+[data-theme=dark] .create-job-summary{color:#79d1bd}
+[data-theme=dark] .job-settings .inline{background:#12212b}
+[data-theme=dark] .form-feedback{background:#41272c;color:#ffb7bd}
+@media(max-width:640px){#workspace-nav button{flex-basis:calc(50% - 6px);font-size:13px;padding:10px 6px}#message{top:6px}.policy-actions button{white-space:normal}#job-create{padding:12px}}
+
+.form-feedback.pending{background:#eff5f7;color:#254153}[data-theme=dark] .form-feedback.pending{background:#273c48;color:#d2e4ee}

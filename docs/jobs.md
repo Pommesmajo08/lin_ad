@@ -1,6 +1,6 @@
 # Automatisierung und geplante Linux-Jobs
 
-Administratoren erstellen Jobs in der Webverwaltung unter **Automatisierung** oder mit dem CLI-Client. Normale Benutzer dürfen weder Jobs anlegen noch deren Ausgaben lesen. Der Server ordnet Ausführungen Geräten zu; der Root-Dienst auf jedem Linux-Gerät holt sie ab. Windows-Jobs sind in dieser Version nicht enthalten. Eigene Linux-Skripte werden unten beschrieben.
+Administratoren öffnen in der Webverwaltung den Bereich **Automatisierung** und dort **Neuen Job anlegen**, oder verwenden den CLI-Client. Bestehende Jobs zeigen Geräte- und Zeitplaneinstellungen unter **Geräte und Zeitplan bearbeiten**. Fehler beim Speichern erscheinen direkt am Formular; bei einem Fehler bleibt die Eingabe erhalten. Normale Benutzer dürfen weder Jobs anlegen noch deren Ausgaben lesen. Der Server ordnet Ausführungen Geräten zu; der Root-Dienst auf jedem Linux-Gerät holt sie ab. Windows-Jobs sind in dieser Version nicht enthalten. Eigene Linux-Skripte werden unten beschrieben.
 
 ## Jobtypen
 

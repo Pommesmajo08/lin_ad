@@ -5,6 +5,21 @@ const localSecret = /^#gui=[a-f0-9]{64}$/.test(location.hash) ? location.hash.sl
 let guiConnected = !localSecret;
 const $ = id => document.getElementById(id);
 const pathName = name => encodeURIComponent(name);
+let activeView = 'devices';
+function showView(view) {
+  if (!profile?.admin && ['automation', 'accounts'].includes(view)) view = 'devices';
+  activeView = view;
+  document.querySelectorAll('[data-page]').forEach(page => { page.hidden = page.dataset.page !== view; });
+  document.querySelectorAll('[data-admin-view]').forEach(button => { button.hidden = !profile?.admin; });
+  document.querySelectorAll('[data-view]').forEach(button => {
+    if (button.dataset.view === view) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  });
+}
+$('workspace-nav').addEventListener('click', event => {
+  const target = event.target.closest('[data-view]');
+  if (target) showView(target.dataset.view);
+});
 const systemTheme = matchMedia('(prefers-color-scheme: dark)');
 let themeChoice = 'system';
 try { themeChoice = localStorage.getItem('linad-theme') || 'system'; } catch (_) { /* Storage can be disabled. */ }
@@ -26,7 +41,8 @@ function message(text, error = false) {
 }
 function signedOut() {
   $('run-script-dialog').close(); $('run-script-source').value = ''; $('run-script-info').textContent = '';
-  syncScriptFields();
+  activeView = 'devices';
+  $('job-create').open = false;
   hideEnrollment(); $('device-policies').replaceChildren(); $('device-policies').hidden = true;
   token = ''; profile = null;
   $('workspace').hidden = true; $('session').hidden = true;
@@ -38,8 +54,16 @@ async function api(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
   if (localSecret) headers['X-Linad-Client'] = localSecret;
   if (token) headers.Authorization = `Bearer ${token}`;
-  const response = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', redirect: 'error' });
-  const data = await response.json();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
+  let response, data;
+  try {
+    response = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), cache: 'no-store', redirect: 'error', signal: controller.signal });
+    data = await response.json();
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Der Server antwortet nicht rechtzeitig. Die Änderung wurde möglicherweise gespeichert; bitte den Status vor einem erneuten Versuch aktualisieren.');
+    throw error;
+  } finally { clearTimeout(timeout); }
   if (!response.ok) {
     if (response.status === 401 && token) {
       signedOut(); throw new Error('Deine Sitzung ist abgelaufen. Bitte erneut anmelden.');
@@ -56,19 +80,33 @@ const translations = {
   'login rate limit exceeded': 'Zu viele Anmeldeversuche. Bitte nach einer Minute erneut versuchen.',
   'password change rate limit exceeded': 'Zu viele Passwortversuche. Bitte nach einer Minute erneut versuchen.',
   'directory persistence failed': 'Die Änderung konnte nicht gespeichert werden.',
+  'job persistence failed': 'Der Server konnte den Job nicht speichern. Deine Eingabe bleibt erhalten; bitte erneut versuchen.',
+  'assign between 1 and 100 Linux devices': 'Bitte mindestens ein und höchstens 100 Linux-Geräte zuweisen.',
+  'invalid job name, kind or interval (0 or 5–525600 minutes)': 'Bitte Namen, Aktion und Wiederholung prüfen: einmalig (0) oder mindestens 5 Minuten.',
   'administrator required': 'Dafür sind Administratorrechte erforderlich.',
   'a run is already pending for this job and device': 'Für diesen Job wartet oder läuft bereits eine Ausführung. Unklare Läufe zuerst prüfen und freigeben.',
   'only queued runs can be cancelled': 'Dieser Lauf hat bereits begonnen und wird nicht während einer Paketoperation abgebrochen.',
   'job not found': 'Dieser Job existiert nicht mehr.'
 };
-async function action(callback) {
-  if (document.body.dataset.busy) return;
+async function action(callback, form = document.activeElement?.closest('form')) {
+  if (document.body.dataset.busy) { message('Eine Anfrage läuft noch. Bitte kurz warten.'); return; }
   document.body.dataset.busy = 'true';
+  if (form) {
+    form.setAttribute('aria-busy', 'true'); form.querySelector('.form-feedback')?.remove();
+    const progress = element('p', 'Anfrage wird verarbeitet …', 'form-feedback pending'); progress.setAttribute('role', 'status'); form.append(progress);
+  }
   document.querySelectorAll('button').forEach(button => { button.disabled = true; });
   try { await callback(); }
-  catch (error) { message(error.message || 'Die Verbindung zum Server ist fehlgeschlagen.', true); }
+  catch (error) {
+    const text = error.message || 'Die Verbindung zum Server ist fehlgeschlagen.';
+    message(text, true);
+    form?.querySelector('.form-feedback.pending')?.remove();
+    if (form?.isConnected) { const feedback = element('p', text, 'form-feedback error'); feedback.setAttribute('role', 'alert'); form.append(feedback); }
+  }
   finally {
     delete document.body.dataset.busy;
+    form?.removeAttribute('aria-busy');
+    form?.querySelector('.form-feedback.pending')?.remove();
     document.querySelectorAll('button').forEach(button => { button.disabled = false; });
   }
 }
@@ -76,7 +114,7 @@ function onForm(id, callback) {
   $(id).addEventListener('submit', event => {
     event.preventDefault();
     const form = event.currentTarget;
-    action(async () => { await callback(Object.fromEntries(new FormData(form)), form); });
+    action(async () => { await callback(Object.fromEntries(new FormData(form)), form); }, form);
   });
 }
 function element(tag, text, className) {
@@ -96,6 +134,7 @@ async function mutate(method, path, body, success) {
 }
 async function refresh() {
   profile = await api('GET', '/v1/me');
+  showView(activeView);
   $('identity').textContent = profile.name;
   $('welcome').textContent = profile.admin ? 'Verzeichnisübersicht' : `Hallo, ${profile.name}.`;
   $('admin-panel').hidden = !profile.admin;
@@ -309,10 +348,11 @@ async function refreshJobs() {
     card.append(element('h3', job.name));
     card.append(element('p', `${jobKindLabels[job.kind]} · ${job.enabled ? 'Zeitplan aktiv' : !job.interval_minutes && !job.next_run_at ? 'Einmaljob ausgelöst' : 'Zeitplan pausiert'} · ${job.interval_minutes ? 'alle ' + job.interval_minutes + ' Minuten' : 'einmalig'}`, 'muted'));
     card.append(element('p', `Nächster Start: ${job.next_run_at ? jobDate(job.next_run_at) : 'Kein weiterer Start geplant'} · Erstellt von ${job.created_by}`, 'muted fine'));
+    const settings = element('details', undefined, 'job-settings'); settings.append(element('summary', 'Geräte und Zeitplan bearbeiten')); card.append(settings);
     const form = element('form', undefined, 'inline'); const label = element('label', 'Zugewiesene Geräte'); const select = element('select'); select.multiple = true; select.size = 3;
     jobDeviceCache.forEach(device => { const option = element('option', device.name); option.value = device.id; option.selected = job.device_ids.includes(device.id); select.append(option); });
     select.required = true; label.append(select); const save = element('button', 'Gerätezuordnung speichern'); save.type = 'submit'; form.append(label, save);
-    form.addEventListener('submit', event => { event.preventDefault(); action(async () => { await api('PATCH', `/v1/jobs/${pathName(job.id)}`, { device_ids: [...select.selectedOptions].map(option => option.value) }); await refreshJobs(); message('Gerätezuordnung gespeichert.'); }); }); card.append(form);
+    form.addEventListener('submit', event => { event.preventDefault(); action(async () => { await api('PATCH', `/v1/jobs/${pathName(job.id)}`, { device_ids: [...select.selectedOptions].map(option => option.value) }); await refreshJobs(); message('Gerätezuordnung gespeichert.'); }, form); }); settings.append(form);
     if (job.kind === 'custom-script') {
       card.append(element('p', `${job.interpreter} · SHA-256: ${job.script_sha256}`, 'muted fine'));
       const editorArea = element('div');
@@ -321,11 +361,11 @@ async function refreshJobs() {
         const detail = await api('GET', `/v1/jobs/${pathName(job.id)}`);
         const editor = element('form', undefined, 'script-editor');
         const label = element('label', 'Interpreter'); const interpreter = element('select');
-        ['bash', 'sh', 'python3'].forEach(value => { const option = element('option', value); option.value = value; option.selected = value === detail.interpreter; interpreter.append(option); }); label.append(interpreter);
-        const scriptLabel = element('label', 'Skript für künftige Läufe'); const source = element('textarea'); source.rows = 12; source.spellcheck = false; source.value = detail.script; scriptLabel.append(source);
+        ['bash', 'sh', 'python3'].forEach(value => { const option = element('option', { bash: 'Bash', sh: 'POSIX sh', python3: 'Python 3' }[value]); option.value = value; option.selected = value === detail.interpreter; interpreter.append(option); }); label.append(interpreter);
+        const scriptLabel = element('label', 'Skript für künftige Läufe'); const source = element('textarea'); source.required = true; source.rows = 12; source.spellcheck = false; source.value = detail.script; scriptLabel.append(source);
         const save = element('button', 'Skript speichern'); save.type = 'submit';
         editor.append(label, scriptLabel, element('p', 'Ausführung als Root. Bereits eingereihte und laufende Jobs behalten ihre bisherige Skriptversion.', 'script-warning'), save);
-        editor.addEventListener('submit', event => { event.preventDefault(); action(async () => { validateScriptSource(source.value); await api('PATCH', `/v1/jobs/${pathName(job.id)}`, { script: source.value, interpreter: interpreter.value }); await refreshJobs(); message('Skript für neue Läufe gespeichert.'); }); }); editorArea.append(editor);
+        editor.addEventListener('submit', event => { event.preventDefault(); action(async () => { validateScriptSource(source.value); await api('PATCH', `/v1/jobs/${pathName(job.id)}`, { script: source.value, interpreter: interpreter.value }); await refreshJobs(); message('Skript für neue Läufe gespeichert.'); }, editor); }); editorArea.append(editor);
       })); card.append(editorArea);
     }
     const schedule = element('form', undefined, 'inline');
@@ -334,7 +374,7 @@ async function refreshJobs() {
     startLabel.append(startInput);
     const intervalLabel = element('label', 'Wiederholung in Minuten (0 = einmalig)'); const interval = element('input'); interval.type = 'number'; interval.min = '0'; interval.max = '525600'; interval.value = String(job.interval_minutes); interval.required = true; intervalLabel.append(interval);
     const saveSchedule = element('button', 'Zeitplan speichern'); saveSchedule.type = 'submit'; schedule.append(startLabel, intervalLabel, saveSchedule);
-    schedule.addEventListener('submit', event => { event.preventDefault(); action(async () => { const update = { interval_minutes: Number(interval.value), enabled: true }; if (startInput.value) update.start_at = new Date(startInput.value).toISOString(); await api('PATCH', `/v1/jobs/${pathName(job.id)}`, update); await refreshJobs(); message('Zeitplan gespeichert.'); }); }); card.append(schedule);
+    schedule.addEventListener('submit', event => { event.preventDefault(); action(async () => { const update = { interval_minutes: Number(interval.value), enabled: true }; if (startInput.value) update.start_at = new Date(startInput.value).toISOString(); await api('PATCH', `/v1/jobs/${pathName(job.id)}`, update); await refreshJobs(); message('Zeitplan gespeichert.'); }, schedule); }); settings.append(schedule);
     const controls = element('div', undefined, 'policy-actions');
     controls.append(button('Jetzt ausführen', async () => { await api('POST', `/v1/jobs/${pathName(job.id)}/run`); await refreshJobs(); message('Job eingereiht. Ausführung beim nächsten Geräteabruf.'); }));
     controls.append(button(job.enabled ? 'Zeitplan pausieren' : 'Zeitplan aktivieren', async () => { await api('PATCH', `/v1/jobs/${pathName(job.id)}`, { enabled: !job.enabled }); await refreshJobs(); message('Zeitplan gespeichert.'); }));
@@ -371,7 +411,7 @@ onForm('job-form', async (data, form) => {
   const body = { name: data.name, kind: data.kind, device_ids: selected, start_at: start, interval_minutes: Number(data.interval_minutes), enabled: data.enabled === 'on' };
   if (data.kind === 'custom-script') { validateScriptSource(data.script); body.script = data.script; body.interpreter = data.interpreter; }
   await api('POST', '/v1/jobs', body);
-  form.reset(); syncScriptFields(); await refreshJobs(); message('Job angelegt.');
+  form.reset(); syncScriptFields(); $('job-create').open = false; await refreshJobs(); message('Job angelegt.');
 });
 $('jobs-refresh').addEventListener('click', () => action(async () => { await refreshJobs(); message('Jobstatus aktualisiert.'); }));
 setInterval(() => {
@@ -398,3 +438,10 @@ $('job-script-file').addEventListener('change', event => action(async () => {
 }));
 $('run-script-close').addEventListener('click', () => { $('run-script-dialog').close(); $('run-script-source').value = ''; });
 syncScriptFields();
+
+// Native browser validation prevents submit events; explain that outcome explicitly.
+document.addEventListener('invalid', event => {
+  const input = event.target;
+  const label = input.labels?.[0]?.textContent.trim().split('\n')[0] || 'Eingabe';
+  message(`${label}: ${input.validationMessage}`, true);
+}, true);
