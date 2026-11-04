@@ -6,7 +6,7 @@ Die Linux-Installation ist in [docs/linux-provisioning.md](docs/linux-provisioni
 
 ## Einfach installieren
 
-Die [Installationsanleitung](docs/installation.md) führt durch Server, Linux-Systemanbindung sowie GUI/CLI unter Linux und Windows. Die Pakete enthalten passende Installer; für Linux-Geräte gibt es einen Assistenten, `--check` und eine `doctor`-Diagnose.
+Die [GitHub Releases](https://github.com/Pommesmajo08/lin_ad/releases) liefern Download-Starter: `install.sh` für Linux und `install-windows.cmd` für Windows. Diese laden und prüfen das passende Paket und übernehmen die Installation. Die [Installationsanleitung](docs/installation.md) führt durch Server, Linux-Systemanbindung sowie GUI/CLI unter Linux und Windows. Die Pakete enthalten passende Installer; für Linux-Geräte gibt es einen Assistenten, `--check` und eine `doctor`-Diagnose.
 
 ## Bauen und testen
 

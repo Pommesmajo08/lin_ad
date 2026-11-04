@@ -1,5 +1,53 @@
 # Linad installieren
 
+## Direkt aus GitHub Releases installieren
+
+Ein veröffentlichtes Release enthält die kleinen Starter `install.sh`, `install.ps1` und `install-windows.cmd` sowie sämtliche Installationspakete und `SHA256SUMS`. Kein Repository-Checkout, Go oder manuelles Entpacken ist auf dem Ziel nötig.
+
+**Linux:** Einmal den Starter herunterladen (`curl` wird zum Erstdownload benötigt):
+
+```sh
+curl --proto '=https' --proto-redir '=https' -fL https://github.com/Pommesmajo08/lin_ad/releases/latest/download/install.sh -o linad-install.sh
+```
+
+Anschließend den gewünschten Weg wählen:
+
+```sh
+sh linad-install.sh client           # GUI/CLI, ohne sudo
+sudo sh linad-install.sh device      # Ubuntu/Debian-Systemanbindung
+sudo sh linad-install.sh server      # Docker-Server
+```
+
+Ohne Komponente öffnet sich eine Auswahl. Architektur und Paket werden automatisch gewählt. Der Starter löst `latest` einmal auf einen festen Tag auf, lädt Paket und Prüfsummen **derselben Version**, prüft SHA-256, entpackt temporär und führt den Paket-Installer aus. Anschließend werden temporäre Dateien entfernt. Die SHA-Prüfung erkennt beschädigte Downloads; sie ist keine unabhängige digitale Signatur. Download und Weiterleitungen bleiben HTTPS.
+
+Fehlende Voraussetzungen können auf Debian/Ubuntu bei Root-Installation über APT ergänzt werden; eine unterbrochene Paketinstallation wird nicht automatisch repariert. Vorhandene Docker-Installationen werden nicht ersetzt. Unter Ubuntu kann der Starter ein fehlendes Compose-v2-Paket ergänzen; wenn Compose v2 auf einer anderen Distribution nicht verfügbar ist, nennt er diese Voraussetzung. Mit `--skip-dependencies` werden Systempakete nicht installiert.
+
+Optionen wie Serveradresse und Geräte-ID werden nach `--` weitergegeben; der Enrollment-Token wird weiterhin verdeckt abgefragt:
+
+```sh
+sudo sh linad-install.sh device -- --server https://directory.example --device-id DEVICE_ID
+sudo sh linad-install.sh device --version v0.1.0 -- --server https://directory.example --device-id DEVICE_ID
+```
+
+**Updates:** denselben Aufruf erneut ausführen. `latest` lädt die aktuelle veröffentlichte stabile Version; `--version TAG` hält eine feste Version. Bestehende Geräteschlüssel, Konten und Serverdaten werden durch die Paket-Installer weiterverwendet. Laufenden GUI-Client vorher beenden. Enrollment und Passwortabfragen bleiben bewusst interaktiv.
+
+**Windows:** [install-windows.cmd herunterladen](https://github.com/Pommesmajo08/lin_ad/releases/latest/download/install-windows.cmd) und doppelt anklicken. Der Starter lädt `install.ps1`, prüft und entpackt das Windows-Paket und richtet die GUI/CLI für den aktuellen Benutzer ein. Alternativ `install.ps1` herunterladen und in PowerShell ausführen:
+
+```powershell
+powershell -NoProfile -File .\install.ps1
+powershell -NoProfile -File .\install.ps1 -Version v0.1.0
+```
+
+Lokale/unternehmensweite PowerShell-Ausführungsrichtlinien werden nicht umgangen. Diese Download-Adressen funktionieren erst, sobald ein vollständiges Release veröffentlicht ist. Für private Repositories den Starter zunächst im angemeldeten Browser von der Release-Seite herunterladen und `GH_TOKEN` mit Leserechten auf die Repository-Inhalte im aktuellen Terminal bereitstellen. Die Starter laden dann über die GitHub-API. Das Token wird nicht in Installationsdateien oder Download-URLs gespeichert. Für den authentifizierten Linux-Download wird zusätzlich Python 3 benötigt (Root-Installer können es als Voraussetzung ergänzen).
+
+Bei Root-Installation unter Linux nur diese Variable gezielt durchreichen:
+
+```sh
+sudo --preserve-env=GH_TOKEN sh install.sh device
+```
+
+Unter Windows übernehmen `install-windows.cmd` und `install.ps1` dieselbe Umgebungsvariable. Nach der Installation `GH_TOKEN` aus dem Terminal entfernen. Keine persönlichen Tokens in kopierte Installationsbefehle, Skripte oder Enrollment-Dialoge einfügen.
+
 ## Welches Paket brauche ich?
 
 | Ziel | Paket | Start |

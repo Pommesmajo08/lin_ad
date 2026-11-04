@@ -1,0 +1,104 @@
+name: Release installers
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to release (for example v0.1.0)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
+          git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "$RELEASE_TAG^{commit}")"
+      - name: Go checks and packages
+        run: |
+          go test -race ./...
+          go vet ./...
+          sh scripts/build.sh
+      - name: Installer download tests
+        run: python3 scripts/test-release-bootstrap.py
+      - name: Debian PAM and installer integration
+        run: sh scripts/test-linux.sh
+      - name: Server image and installation bundle
+        run: python3 scripts/test-container.py --export-image
+      - name: Prepare release assets
+        run: python3 scripts/prepare-release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release/*
+          if-no-files-found: error
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Build and test Windows installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          go build -o dist/linad-client-windows-amd64.exe ./cmd/client
+          if ($LASTEXITCODE) { throw 'CLI build failed' }
+          go build -ldflags='-H windowsgui' -o dist/linad-client-gui-windows-amd64.exe ./cmd/client-gui
+          if ($LASTEXITCODE) { throw 'GUI build failed' }
+          $testDir = Join-Path $env:RUNNER_TEMP 'linad-install-test'
+          & ./scripts/install-client.ps1 -InstallDir $testDir
+          if (-not (Test-Path (Join-Path $testDir 'linad-client-gui.exe'))) { throw 'GUI not installed' }
+          & ./scripts/install-client.ps1 -InstallDir $testDir
+          & ./scripts/install-client.ps1 -InstallDir $testDir -Uninstall
+          if (Test-Path (Join-Path $testDir 'linad-client.exe')) { throw 'CLI not removed' }
+          $null = [scriptblock]::Create((Get-Content ./scripts/install-release.ps1 -Raw))
+  publish:
+    needs: [build, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -eu
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'Release already exists; existing versions are never overwritten.' >&2
+            exit 1
+          fi
+          printf 'Download install.sh (Linux) or install-windows.cmd (Windows) to install directly from this release. Packages and SHA-256 checksums are attached.\n' > notes.md
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            gh release create "$RELEASE_TAG" release/* --draft --prerelease --title "Linad $RELEASE_TAG" --notes-file notes.md
+          else
+            gh release create "$RELEASE_TAG" release/* --draft --title "Linad $RELEASE_TAG" --notes-file notes.md
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false

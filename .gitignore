@@ -3,3 +3,5 @@
 *.tar
 .env
 __pycache__/
+
+/release/

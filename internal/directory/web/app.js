@@ -316,7 +316,7 @@ function renderDevicePolicies(devices, users, groups) {
         $('enrollment-device').textContent = `${device.name} · Geräte-ID: ${device.id}`;
         const server = localSecret ? $('server-address').textContent : location.origin;
         const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
-        $('enrollment-command').value = `sudo sh scripts/install-linux.sh --server ${quote(server)} --device-id ${quote(device.id)}${server.startsWith('http:') ? ' --allow-http' : ''}`;
+        $('enrollment-command').value = `sudo --preserve-env=GH_TOKEN sh install.sh device -- --server ${quote(server)} --device-id ${quote(device.id)}${server.startsWith('http:') ? ' --allow-http' : ''}`;
         $('enrollment-token').value = enrollment.enrollment_token;
         $('enrollment-expiry').textContent = `Gültig bis ${new Date(enrollment.expires_at).toLocaleString()}`;
         $('enrollment-panel').hidden = false; $('enrollment-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
