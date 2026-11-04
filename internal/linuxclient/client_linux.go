@@ -186,3 +186,17 @@ func (c *Client) Check(ctx context.Context, login, password string, authenticate
 	err := c.request(ctx, "POST", path, body, &account, true)
 	return account, err
 }
+
+// Health checks the endpoint before consuming an enrollment token or installing files.
+func (c *Client) Health(ctx context.Context) error {
+	var response struct {
+		Status string `json:"status"`
+	}
+	if err := c.request(ctx, "GET", "/healthz", nil, &response, false); err != nil {
+		return err
+	}
+	if response.Status != "ok" {
+		return errors.New("server health check failed")
+	}
+	return nil
+}

@@ -4,9 +4,13 @@ Ein eigener Verzeichnisdienst in Go mit Server-API, GUI-/CLI-Clients für Linux 
 
 Die Linux-Installation ist in [docs/linux-provisioning.md](docs/linux-provisioning.md) beschrieben. Sie erstellt reguläre lokale Konten für die pro Gerät freigegebenen Benutzer; Administratoren erhalten zusätzlich sudo mit Linad-Passwort. Der Server ist bei jeder neuen verwalteten Anmeldung erforderlich; es gibt keine Offline-Passwortkopien.
 
+## Einfach installieren
+
+Die [Installationsanleitung](docs/installation.md) führt durch Server, Linux-Systemanbindung sowie GUI/CLI unter Linux und Windows. Die Pakete enthalten passende Installer; für Linux-Geräte gibt es einen Assistenten, `--check` und eine `doctor`-Diagnose.
+
 ## Bauen und testen
 
-Go 1.27 oder neuer; keine externen Go-Abhängigkeiten. Docker mit Compose für Containerbetrieb.
+Go 1.27 oder neuer und Python 3 zum Erstellen des Windows-ZIP-Pakets; keine externen Go-Abhängigkeiten. Docker mit Compose für Containerbetrieb.
 
 ```sh
 go test -race ./...
@@ -26,6 +30,8 @@ Ergebnisse unter `dist/` (jeweils amd64):
 | `linad-client-gui-windows-amd64.exe` | Windows mit GUI im Browser, ohne Konsolenfenster |
 | `linad-linux-amd64` / `linad-linux-arm64` | Root-Provisionierungsdienst und PAM-Helfer |
 | `linad-linux-provisioner-amd64.tar.gz` / `linad-linux-provisioner-arm64.tar.gz` | Linux-Installationspaket mit Dienst, Installer und Anleitung |
+
+Zusätzlich entstehen GUI/CLI-Installationspakete `linad-client-linux-amd64.tar.gz` und `linad-client-windows-amd64.zip`. `python3 scripts/test-container.py --export-image` erstellt das geprüfte Docker-Installationspaket `linad-server-docker.tar.gz`.
 
 Windows wird crosskompiliert; ein nativer Windows-Lauf ist separat zu testen. Ein exportiertes Image kann mit `docker load -i dist/linad-server-image.tar` importiert werden.
 

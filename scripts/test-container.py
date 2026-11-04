@@ -1,5 +1,5 @@
 """Build and exercise the server image; optionally export with --export-image.
-All state and credentials belong to an ephemeral test container on port 18081.
+All state and credentials belong to an ephemeral test container on a random loopback port.
 """
 import argparse
 import json
@@ -7,6 +7,7 @@ from pathlib import Path
 import secrets
 import subprocess
 import time
+import tarfile
 import urllib.error
 import urllib.request
 
@@ -18,15 +19,20 @@ args = parser.parse_args()
 def docker(*arguments):
     return subprocess.check_output(['docker', *arguments], text=True).strip()
 
-name = 'linad-container-smoke'
+name = 'linad-container-smoke-'+secrets.token_hex(6)
 password = secrets.token_urlsafe(32)
-base = 'http://127.0.0.1:18081'
+base = ''
 docker('build', '-t', 'linad-server:local', str(root))
-docker('run', '-d', '--name', name, '-p', '127.0.0.1:18081:8080',
+docker('run', '-d', '--name', name, '-p', '127.0.0.1::8080',
        '-e', 'LINAD_ADMIN_PASSWORD='+password, 'linad-server:local')
 try:
+    port=docker('port',name,'8080/tcp').rsplit(':',1)[1]
+    base='http://127.0.0.1:'+port
     def ready():
-        for _ in range(50):
+        global base
+        port=docker('port',name,'8080/tcp').rsplit(':',1)[1]
+        base='http://127.0.0.1:'+port
+        for _ in range(100):
             try:
                 assert json.load(urllib.request.urlopen(base+'/healthz',timeout=1))['status']=='ok'
                 return
@@ -70,6 +76,9 @@ try:
     api('GET','/v1/machine/users',machine,want=401)
     if args.export_image:
         docker('save','-o',str(root/'dist/linad-server-image.tar'),'linad-server:local')
+        with tarfile.open(root/'dist/linad-server-docker.tar.gz','w:gz') as archive:
+            for name in ['dist/linad-server-image.tar','scripts/install-server.sh','docs/installation.md']:
+                archive.add(root/name,arcname=name)
     print('PASS: server image, web assets, admin-only device registration, ACLs, enrollment, machine identity, restart persistence and credential revocation')
 finally:
     docker('rm','-fv',name)

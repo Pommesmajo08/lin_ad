@@ -2,6 +2,10 @@
 
 Der Root-Dienst provisioniert lokal reguläre Unix-Konten und prüft Linad-Passwörter und Gerätefreigaben über PAM online. Er ist für Debian/Ubuntu mit `pam-auth-update`, `useradd`, `groupadd` und systemd vorgesehen. Tests mit echtem PAM laufen in isolierten Debian- und Ubuntu-26.04-Containern (klassisches sudo und sudo-rs 0.2.13); ein realer grafischer Login und distributionsspezifische SSH-Konfigurationen müssen vor dem Rollout auf einem Testsystem geprüft werden.
 
+## Geführte Installation und Diagnose
+
+Das vollständige Paket entpacken und `sudo sh scripts/install-linux.sh` starten. Bei der Ersteinrichtung werden fehlende Serveradresse, Geräte-ID und optionale CA-Datei abgefragt; bei Updates wird der Geräteschlüssel wiederverwendet. `--check` prüft Voraussetzungen und Verbindung ohne Installation oder Token-Einlösung. Nach der Einrichtung hilft `sudo /usr/local/libexec/linad-linux doctor` bei der Diagnose. Die [Installationsübersicht](installation.md) beschreibt auch Server und Desktop-Clients.
+
 ## Ablauf für den Administrator
 
 1. Server aktualisieren und als Linad-Administrator ein Gerät mit Betriebssystem Linux registrieren.

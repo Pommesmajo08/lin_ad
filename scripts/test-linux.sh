@@ -9,3 +9,6 @@ if [ -n "${LINAD_BUILD_CA_FILE:-}" ]; then set -- "$@" --secret "id=proxy_ca,src
 "$@" tests/linux
 docker run --rm --mount "type=bind,src=$(pwd),dst=/src,readonly" \
   -e LINAD_ISOLATED_PAM_TEST=1 "$linad_test_image" python3 /src/tests/linux/integration.py
+
+docker run --rm --mount "type=bind,src=$(pwd),dst=/src,readonly" \
+  -e LINAD_ISOLATED_PAM_TEST=1 "$linad_test_image" python3 /src/tests/linux/installers.py

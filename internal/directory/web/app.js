@@ -32,7 +32,7 @@ $('theme').addEventListener('change', () => {
   applyTheme();
 });
 systemTheme.addEventListener('change', applyTheme);
-function hideEnrollment() { $('enrollment-token').value = ''; $('enrollment-panel').hidden = true; }
+function hideEnrollment() { $('enrollment-command').value = ''; $('enrollment-token').value = ''; $('enrollment-panel').hidden = true; }
 $('close-enrollment').addEventListener('click', hideEnrollment);
 function message(text, error = false) {
   $('message').textContent = text;
@@ -314,6 +314,9 @@ function renderDevicePolicies(devices, users, groups) {
       actions.append(button('Linux provisionieren', async () => {
         const enrollment = await api('POST', `/v1/devices/${pathName(device.id)}/enrollment`);
         $('enrollment-device').textContent = `${device.name} · Geräte-ID: ${device.id}`;
+        const server = localSecret ? $('server-address').textContent : location.origin;
+        const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+        $('enrollment-command').value = `sudo sh scripts/install-linux.sh --server ${quote(server)} --device-id ${quote(device.id)}${server.startsWith('http:') ? ' --allow-http' : ''}`;
         $('enrollment-token').value = enrollment.enrollment_token;
         $('enrollment-expiry').textContent = `Gültig bis ${new Date(enrollment.expires_at).toLocaleString()}`;
         $('enrollment-panel').hidden = false; $('enrollment-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -465,3 +468,15 @@ document.addEventListener('invalid', event => {
   const label = input.labels?.[0]?.textContent.trim().split('\n')[0] || 'Eingabe';
   message(`${label}: ${input.validationMessage}`, true);
 }, true);
+
+$('copy-enrollment-command').addEventListener('click', () => action(async () => {
+  const command = $('enrollment-command');
+  try {
+    if (!navigator.clipboard) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(command.value);
+    message('Installationsbefehl kopiert. Der Token wird separat im Terminal eingegeben.');
+  } catch (_) {
+    command.focus(); command.select();
+    message('Installationsbefehl markiert. Mit Strg+C oder Cmd+C kopieren.');
+  }
+}));

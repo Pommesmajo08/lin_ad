@@ -83,6 +83,9 @@ with tempfile.TemporaryDirectory() as tmp:
             policy.get_by_role('button', name='Linux provisionieren', exact=True).click()
             page.locator('#enrollment-panel').wait_for(state='visible')
             assert len(page.locator('#enrollment-token').input_value()) == 64
+            command=page.locator('#enrollment-command').input_value()
+            assert BASE in command and '--device-id' in command and '--allow-http' in command
+            assert page.locator('#enrollment-token').input_value() not in command
             page.get_by_role('button', name='Token verbergen', exact=True).click()
             assert page.locator('#enrollment-token').input_value() == ''
             row.get_by_role('button', name='Rückmeldung', exact=True).click()

@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 import pwd
+import pty
+import select
 import secrets
 import shutil
 import ssl
@@ -75,7 +77,52 @@ with tempfile.TemporaryDirectory() as tmp:
         sudo_pam_before={name:(Path('/etc/pam.d/'+name).read_bytes() if Path('/etc/pam.d/'+name).exists() else None) for name in ['sudo','sudo-i']}
         install = ['sh',str(ROOT/'scripts/install-linux.sh'),'--server',base,
                    '--device-id',device['id'],'--ca-file',cert,'--no-start']
-        run(install,input=enrollment['enrollment_token']+'\n')
+        # Failed preflight must not install a binary, create config, or consume a token.
+        run(['sh',str(ROOT/'scripts/install-linux.sh'),'--server'],ok=False)
+        bad_install = install.copy()
+        bad_install[bad_install.index('--server')+1] = 'https://127.0.0.1:1'
+        run(bad_install,input=enrollment['enrollment_token']+'\n',ok=False)
+        assert not CONFIG.exists() and not Path(AGENT).exists()
+        checked=run(install+['--check'])
+        assert 'Vorabprüfung erfolgreich' in checked.stdout
+        assert not CONFIG.exists() and not Path(AGENT).exists()
+        # Exercise the real guided terminal flow, including the hidden token prompt.
+        master, slave = pty.openpty()
+        wizard = subprocess.Popen(['sh',str(ROOT/'scripts/install-linux.sh'),'--no-start'],stdin=slave,stdout=slave,stderr=slave)
+        os.close(slave)
+        transcript = b''
+        def answer(prompt, value):
+            global transcript
+            deadline=time.monotonic()+20
+            while prompt.encode() not in transcript:
+                if time.monotonic()>deadline:
+                    raise AssertionError('installer prompt timeout')
+                if select.select([master],[],[],.2)[0]:
+                    transcript += os.read(master,65536)
+            os.write(master,(value+'\n').encode())
+        try:
+            answer('Serveradresse (https://…):',base)
+            answer('Geräte-ID:',device['id'])
+            answer('Eigene CA-Datei',cert)
+            answer('Einmaligen Enrollment-Token eingeben:',enrollment['enrollment_token'])
+            deadline=time.monotonic()+30
+            while wizard.poll() is None and time.monotonic()<deadline:
+                if select.select([master],[],[],.2)[0]:
+                    try:
+                        transcript += os.read(master,65536)
+                    except OSError:
+                        break
+            assert wizard.wait(timeout=5)==0, 'guided installer failed'
+            assert enrollment['enrollment_token'].encode() not in transcript, 'terminal echoed enrollment token'
+        finally:
+            os.close(master)
+            if wizard.poll() is None:
+                wizard.kill()
+                wizard.wait()
+        doctor=run([AGENT,'doctor'])
+        assert 'Freigegebene Konten: 0' in doctor.stdout
+        assert json.loads(CONFIG.read_text())['secret'] not in doctor.stdout
+        assert 'Vorabprüfung erfolgreich' in run(install+['--check']).stdout
         assert stat.S_IMODE(CONFIG.stat().st_mode) == 0o600 and CONFIG.stat().st_uid == 0
         assert 'pam-auth' in Path('/etc/pam.d/common-auth').read_text()
         assert 'pam-account' in Path('/etc/pam.d/common-account').read_text()

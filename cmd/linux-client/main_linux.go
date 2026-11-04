@@ -25,7 +25,6 @@ func main() {
 	}
 }
 func readEnrollmentToken() (string, error) {
-	fmt.Fprint(os.Stderr, "Einmaligen Enrollment-Token eingeben: ")
 	var term syscall.Termios
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TCGETS, uintptr(unsafe.Pointer(&term)))
 	if errno == 0 {
@@ -34,6 +33,7 @@ func readEnrollmentToken() (string, error) {
 		syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TCSETS, uintptr(unsafe.Pointer(&term)))
 		defer syscall.Syscall(syscall.SYS_IOCTL, os.Stdin.Fd(), syscall.TCSETS, uintptr(unsafe.Pointer(&old)))
 	}
+	fmt.Fprint(os.Stderr, "Einmaligen Enrollment-Token eingeben: ")
 	token, err := bufio.NewReader(io.LimitReader(os.Stdin, 130)).ReadString('\n')
 	fmt.Fprintln(os.Stderr)
 	if err != nil && err != io.EOF {
@@ -50,7 +50,7 @@ func run() error {
 		return errors.New("linad-linux must run as root")
 	}
 	if len(os.Args) < 2 {
-		return errors.New("commands: enroll, sync, daemon, jobs-once, pam-auth, pam-account, deactivate")
+		return errors.New("commands: enroll, check-connection, doctor, sync, daemon, jobs-once, pam-auth, pam-account, deactivate")
 	}
 	mode := os.Args[1]
 	flags := flag.NewFlagSet(mode, flag.ContinueOnError)
@@ -85,6 +85,17 @@ func run() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
+	if mode == "check-connection" {
+		c, err := linuxclient.New(linuxclient.Config{Server: *server, DeviceID: *deviceID, CAFile: *caFile, AllowHTTP: *allowHTTP})
+		if err != nil {
+			return err
+		}
+		if err = c.Health(ctx); err != nil {
+			return err
+		}
+		fmt.Println("OK: Server erreichbar, Adresse und TLS-Konfiguration geprüft.")
+		return nil
+	}
 	if mode == "enroll" {
 		if _, err := os.Lstat(*config); err == nil {
 			if !*replace {
@@ -121,6 +132,22 @@ func run() error {
 		return err
 	}
 	switch mode {
+	case "doctor":
+		fmt.Printf("Server: %s\nGeräte-ID: %s\n", c.Config.Server, c.Config.DeviceID)
+		accounts, err := c.Accounts(ctx)
+		if err != nil {
+			return fmt.Errorf("Verbindung/Geräteschlüssel prüfen: %w", err)
+		}
+		registry, err := linuxclient.ReadRegistry(*state, c.Config.DeviceID)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("OK: Server und Geräteschlüssel gültig. Freigegebene Konten: %d; lokal registriert: %d\n", len(accounts), len(registry.Accounts))
+		if len(accounts) == 0 {
+			fmt.Println("Hinweis: Unter Geräte → Anmeldezugriff Benutzer oder Gruppen freigeben; aktuell darf sich niemand anmelden.")
+		}
+		fmt.Println("Dienststatus: systemctl status linad-linux; Protokoll: journalctl -u linad-linux")
+		return nil
 	case "jobs-once":
 		_, err := linuxclient.ProcessJobOnce(context.Background(), c, *jobsState)
 		return err
