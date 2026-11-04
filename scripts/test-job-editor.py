@@ -52,12 +52,15 @@ with tempfile.TemporaryDirectory() as tmp:
             page.get_by_role('button',name='Job anlegen',exact=True).click()
             expect(page.locator('#message')).to_have_class('error')
             page.locator('#job-devices').select_option(device['id'])
+            page.locator('#job-form [name=interval_minutes]').fill('2')
+            page.locator('#job-form [name=interval_unit]').select_option('10080')
             with page.expect_response(lambda r: r.request.method=='POST' and r.url.endswith('/v1/jobs')) as response:
                 page.get_by_role('button',name='Job anlegen',exact=True).click()
             assert response.value.status==201
             page.get_by_text('Job angelegt.',exact=True).wait_for()
             job=api('GET','/v1/jobs',token=token)[0]
             assert api('GET','/v1/jobs/'+job['id'],token=token)['interpreter']=='python3'
+            assert job['interval_minutes']==20160
             card=page.locator('.job-card')
             card.get_by_role('button',name='Skript anzeigen / bearbeiten',exact=True).click()
             editor=card.locator('.script-editor')
@@ -83,6 +86,24 @@ with tempfile.TemporaryDirectory() as tmp:
             page.get_by_text('Skript für neue Läufe gespeichert.',exact=True).wait_for()
             detail=api('GET','/v1/jobs/'+job['id'],token=token)
             assert detail['script']==replacement and detail['interpreter']=='python3'
+            # Editing converts units both ways, supports multiple years and rejects excess.
+            card.locator('.job-settings > summary').click()
+            expect(card.locator('input[type=number]')).to_have_value('2')
+            expect(card.locator('[name=interval_unit]')).to_have_value('10080')
+            card.locator('input[type=number]').fill('11')
+            card.locator('[name=interval_unit]').select_option('525600')
+            card.get_by_role('button',name='Zeitplan speichern',exact=True).click()
+            expect(card.locator('.form-feedback.error')).to_be_visible()
+            assert api('GET','/v1/jobs/'+job['id'],token=token)['interval_minutes']==20160
+            card.locator('input[type=number]').fill('3')
+            with page.expect_response(lambda r: r.request.method=='PATCH' and r.url.endswith('/v1/jobs/'+job['id'])):
+                card.get_by_role('button',name='Zeitplan speichern',exact=True).click()
+            page.get_by_text('Zeitplan gespeichert.',exact=True).wait_for()
+            assert api('GET','/v1/jobs/'+job['id'],token=token)['interval_minutes']==1576800
+            expect(card).to_contain_text('alle 3 Jahre')
+            card.locator('.job-settings > summary').click()
+            expect(card.locator('input[type=number]')).to_have_value('3')
+            expect(card.locator('[name=interval_unit]')).to_have_value('525600')
             # Switching areas does not discard an unsaved draft.
             card.get_by_role('button',name='Skript anzeigen / bearbeiten',exact=True).click()
             editor.locator('textarea').fill('print("draft")\n')
@@ -97,7 +118,7 @@ with tempfile.TemporaryDirectory() as tmp:
                     page.screenshot(path='/tmp/linad-jobs-'+theme+'-'+str(width)+'.png',full_page=True)
             assert not errors, errors
             browser.close()
-        print('PASS: Python creation/edit/save, visible validation, failed save/retry with preserved draft, navigation, light/dark desktop/mobile')
+        print('PASS: repeat units, weeks/year conversion/limits/persistence, Python creation/edit/save, visible validation, failed save/retry with preserved draft, navigation, light/dark desktop/mobile')
     finally:
         server.terminate()
         server.wait(timeout=5)

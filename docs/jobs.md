@@ -30,7 +30,7 @@ Die Ausführung nutzt die Geräteidentität, unabhängig davon, welche Benutzer 
 1. Name und Aktion wählen.
 2. Ein oder mehrere Linux-Geräte auswählen.
 3. Startzeit leer lassen für sofortige Einreihung oder eine lokale Datum/Uhrzeit eingeben.
-4. Wiederholung: `0` für einmalig, z. B. `1440` für alle 24 Stunden oder `10080` für alle 7 Tage. Intervalle beginnen bei 5 Minuten.
+4. Abstand und Zeiteinheit wählen: Minuten, Stunden, Tage, Wochen oder Jahre. Zum Beispiel `2` und **Wochen** für alle 14 Tage; `0` bedeutet einmalig. Möglich sind ganze Zahlen mit einem Gesamtabstand von 5 Minuten bis 10 Jahren. Ein Jahr entspricht fest 365 Tagen. Beim Bearbeiten werden bestehende Intervalle automatisch in einer passenden Einheit angezeigt. CLI und API verwenden weiterhin Minuten.
 5. „Job anlegen“ wählen. Die Ausführung beginnt beim nächsten Geräteabruf, normalerweise innerhalb von 15 Sekunden bei einem erreichbaren, aktuellen Client.
 
 Zeitangaben werden im Browser lokal eingegeben und serverseitig als UTC gespeichert. Wiederholungen sind feste Zeitabstände, keine kalenderbasierten Cron-Termine; Sommerzeitwechsel können die angezeigte lokale Uhrzeit verschieben. Pro Vorlage können maximal 100 Linux-Geräte zugeordnet werden.

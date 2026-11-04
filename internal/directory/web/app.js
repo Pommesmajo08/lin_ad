@@ -82,7 +82,8 @@ const translations = {
   'directory persistence failed': 'Die Änderung konnte nicht gespeichert werden.',
   'job persistence failed': 'Der Server konnte den Job nicht speichern. Deine Eingabe bleibt erhalten; bitte erneut versuchen.',
   'assign between 1 and 100 Linux devices': 'Bitte mindestens ein und höchstens 100 Linux-Geräte zuweisen.',
-  'invalid job name, kind or interval (0 or 5–525600 minutes)': 'Bitte Namen, Aktion und Wiederholung prüfen: einmalig (0) oder mindestens 5 Minuten.',
+  'invalid interval (0 or 5–5256000 minutes)': 'Bitte einen Abstand zwischen 5 Minuten und 10 Jahren wählen; 0 bedeutet einmalig.',
+  'invalid job name, kind or interval (0 or 5–5256000 minutes)': 'Bitte Namen, Aktion und Wiederholung prüfen: einmalig (0) oder mindestens 5 Minuten.',
   'administrator required': 'Dafür sind Administratorrechte erforderlich.',
   'a run is already pending for this job and device': 'Für diesen Job wartet oder läuft bereits eine Ausführung. Unklare Läufe zuerst prüfen und freigeben.',
   'only queued runs can be cancelled': 'Dieser Lauf hat bereits begonnen und wird nicht während einer Paketoperation abgebrochen.',
@@ -331,6 +332,22 @@ function renderDevicePolicies(devices, users, groups) {
 
 const jobKindLabels = { 'system-info': 'Systeminformationen', 'apt-refresh': 'Paketlisten aktualisieren', 'apt-upgrade': 'Paketupdates installieren', 'custom-script': 'Eigenes Root-Skript' };
 const jobStatusLabels = { queued: 'Wartet', running: 'Läuft', succeeded: 'Erfolgreich', failed: 'Fehlgeschlagen', unknown: 'Unklar', cancelled: 'Vor Start abgebrochen' };
+const intervalUnits = [[525600, 'Jahre (365 Tage)', 'Jahr', 'Jahre'], [10080, 'Wochen', 'Woche', 'Wochen'], [1440, 'Tage', 'Tag', 'Tage'], [60, 'Stunden', 'Stunde', 'Stunden'], [1, 'Minuten', 'Minute', 'Minuten']];
+function splitInterval(minutes) {
+  const unit = minutes ? intervalUnits.find(([factor]) => minutes % factor === 0)[0] : 1;
+  return { count: minutes / unit, unit };
+}
+function intervalText(minutes) {
+  if (!minutes) return 'einmalig';
+  const { count, unit } = splitInterval(minutes);
+  const entry = intervalUnits.find(([factor]) => factor === unit);
+  return count === 1 ? ({ 1: 'jede Minute', 60: 'jede Stunde', 1440: 'jeden Tag', 10080: 'jede Woche', 525600: 'jedes Jahr (365 Tage)' }[unit]) : `alle ${count} ${entry[3]}`;
+}
+function intervalMinutes(count, unit) {
+  const minutes = Number(count) * Number(unit);
+  if (!intervalUnits.some(([factor]) => factor === Number(unit)) || !Number.isInteger(Number(count)) || !Number.isSafeInteger(minutes) || minutes < 0 || (minutes > 0 && minutes < 5) || minutes > 5256000) throw new Error('Wiederholung: 0 für einmalig oder ein Abstand zwischen 5 Minuten und 10 Jahren. Bitte eine ganze Zahl eingeben.');
+  return minutes;
+}
 function jobDeviceName(id) { return jobDeviceCache.find(device => device.id === id)?.name || id; }
 function jobDate(value) { return value ? new Date(value).toLocaleString() : '—'; }
 async function refreshJobs() {
@@ -346,7 +363,7 @@ async function refreshJobs() {
   jobs.forEach(job => {
     const card = element('div', undefined, 'job-card');
     card.append(element('h3', job.name));
-    card.append(element('p', `${jobKindLabels[job.kind]} · ${job.enabled ? 'Zeitplan aktiv' : !job.interval_minutes && !job.next_run_at ? 'Einmaljob ausgelöst' : 'Zeitplan pausiert'} · ${job.interval_minutes ? 'alle ' + job.interval_minutes + ' Minuten' : 'einmalig'}`, 'muted'));
+    card.append(element('p', `${jobKindLabels[job.kind]} · ${job.enabled ? 'Zeitplan aktiv' : !job.interval_minutes && !job.next_run_at ? 'Einmaljob ausgelöst' : 'Zeitplan pausiert'} · ${intervalText(job.interval_minutes)}`, 'muted'));
     card.append(element('p', `Nächster Start: ${job.next_run_at ? jobDate(job.next_run_at) : 'Kein weiterer Start geplant'} · Erstellt von ${job.created_by}`, 'muted fine'));
     const settings = element('details', undefined, 'job-settings'); settings.append(element('summary', 'Geräte und Zeitplan bearbeiten')); card.append(settings);
     const form = element('form', undefined, 'inline'); const label = element('label', 'Zugewiesene Geräte'); const select = element('select'); select.multiple = true; select.size = 3;
@@ -372,9 +389,12 @@ async function refreshJobs() {
     const startLabel = element('label', 'Nächste Startzeit (lokal)'); const startInput = element('input'); startInput.type = 'datetime-local';
     if (job.next_run_at) { const date = new Date(job.next_run_at); const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000); startInput.value = local.toISOString().slice(0, 16); }
     startLabel.append(startInput);
-    const intervalLabel = element('label', 'Wiederholung in Minuten (0 = einmalig)'); const interval = element('input'); interval.type = 'number'; interval.min = '0'; interval.max = '525600'; interval.value = String(job.interval_minutes); interval.required = true; intervalLabel.append(interval);
-    const saveSchedule = element('button', 'Zeitplan speichern'); saveSchedule.type = 'submit'; schedule.append(startLabel, intervalLabel, saveSchedule);
-    schedule.addEventListener('submit', event => { event.preventDefault(); action(async () => { const update = { interval_minutes: Number(interval.value), enabled: true }; if (startInput.value) update.start_at = new Date(startInput.value).toISOString(); await api('PATCH', `/v1/jobs/${pathName(job.id)}`, update); await refreshJobs(); message('Zeitplan gespeichert.'); }, schedule); }); settings.append(schedule);
+    const currentInterval = splitInterval(job.interval_minutes);
+    const intervalLabel = element('label', 'Abstand (0 = einmalig)'); const interval = element('input'); interval.type = 'number'; interval.min = '0'; interval.max = '5256000'; interval.step = '1'; interval.value = String(currentInterval.count); interval.required = true; intervalLabel.append(interval);
+    const unitLabel = element('label', 'Zeiteinheit'); const unit = element('select'); unit.name = 'interval_unit';
+    [...intervalUnits].reverse().forEach(([factor, title]) => { const option = element('option', title); option.value = String(factor); option.selected = factor === currentInterval.unit; unit.append(option); }); unitLabel.append(unit);
+    const saveSchedule = element('button', 'Zeitplan speichern'); saveSchedule.type = 'submit'; schedule.append(startLabel, intervalLabel, unitLabel, saveSchedule);
+    schedule.addEventListener('submit', event => { event.preventDefault(); action(async () => { const update = { interval_minutes: intervalMinutes(interval.value, unit.value), enabled: true }; if (startInput.value) update.start_at = new Date(startInput.value).toISOString(); await api('PATCH', `/v1/jobs/${pathName(job.id)}`, update); await refreshJobs(); message('Zeitplan gespeichert.'); }, schedule); }); settings.append(schedule);
     const controls = element('div', undefined, 'policy-actions');
     controls.append(button('Jetzt ausführen', async () => { await api('POST', `/v1/jobs/${pathName(job.id)}/run`); await refreshJobs(); message('Job eingereiht. Ausführung beim nächsten Geräteabruf.'); }));
     controls.append(button(job.enabled ? 'Zeitplan pausieren' : 'Zeitplan aktivieren', async () => { await api('PATCH', `/v1/jobs/${pathName(job.id)}`, { enabled: !job.enabled }); await refreshJobs(); message('Zeitplan gespeichert.'); }));
@@ -408,7 +428,7 @@ async function refreshJobRuns() {
 onForm('job-form', async (data, form) => {
   const selected = [...form.elements.devices.selectedOptions].map(option => option.value);
   const start = data.start_at ? new Date(data.start_at).toISOString() : null;
-  const body = { name: data.name, kind: data.kind, device_ids: selected, start_at: start, interval_minutes: Number(data.interval_minutes), enabled: data.enabled === 'on' };
+  const body = { name: data.name, kind: data.kind, device_ids: selected, start_at: start, interval_minutes: intervalMinutes(data.interval_minutes, data.interval_unit), enabled: data.enabled === 'on' };
   if (data.kind === 'custom-script') { validateScriptSource(data.script); body.script = data.script; body.interpreter = data.interpreter; }
   await api('POST', '/v1/jobs', body);
   form.reset(); syncScriptFields(); $('job-create').open = false; await refreshJobs(); message('Job angelegt.');

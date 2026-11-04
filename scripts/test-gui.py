@@ -134,9 +134,10 @@ with tempfile.TemporaryDirectory() as tmp:
             page.get_by_role('button',name='Jobstatus aktualisieren',exact=True).click()
             expect(page.locator('#job-runs details')).to_have_attribute('open','')
             jobcard.locator('.job-settings > summary').click()
+            jobcard.locator('[name=interval_unit]').select_option('1')
             jobcard.locator('input[type=number]').fill('60')
             jobcard.get_by_role('button',name='Zeitplan speichern',exact=True).click()
-            expect(jobcard.locator('input[type=number]')).to_have_value('60')
+            expect(jobcard.locator('input[type=number]')).to_have_value('1')
             expect(page.locator('body')).not_to_have_attribute('data-busy','true')
             assert cli('jobs')[0]['interval_minutes']==60
             jobcard.get_by_role('button',name='Zeitplan pausieren',exact=True).click()
@@ -151,7 +152,7 @@ with tempfile.TemporaryDirectory() as tmp:
             expect(page.locator('#devices tr')).to_have_count(2)
             assigned=[d['id'] for d in cli('devices')]
             jobcard.locator('.job-settings > summary').click()
-            jobcard.locator('select').select_option(assigned)
+            jobcard.locator('select[multiple]').select_option(assigned)
             jobcard.get_by_role('button',name='Gerätezuordnung speichern',exact=True).click()
             page.get_by_text('Gerätezuordnung gespeichert.',exact=True).wait_for()
             assert sorted(cli('jobs')[0]['device_ids'])==sorted(assigned)

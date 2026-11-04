@@ -253,8 +253,8 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request, u User) {
 			return
 		}
 		b.Name = strings.TrimSpace(b.Name)
-		if b.Name == "" || len(b.Name) > 80 || !ValidJobKind(b.Kind) || b.Interval < 0 || (b.Interval > 0 && b.Interval < 5) || b.Interval > 525600 {
-			fail(w, 400, "invalid job name, kind or interval (0 or 5–525600 minutes)")
+		if b.Name == "" || len(b.Name) > 80 || !ValidJobKind(b.Kind) || b.Interval < 0 || (b.Interval > 0 && b.Interval < 5) || b.Interval > 5256000 {
+			fail(w, 400, "invalid job name, kind or interval (0 or 5–5256000 minutes)")
 			return
 		}
 		script, interpreter, hash := "", "", ""
@@ -346,8 +346,8 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request, u User) {
 			job.DeviceIDs = uniqueNames(*b.DeviceIDs)
 		}
 		if b.Interval != nil {
-			if *b.Interval < 0 || (*b.Interval > 0 && *b.Interval < 5) || *b.Interval > 525600 {
-				fail(w, 400, "invalid interval (0 or 5–525600 minutes)")
+			if *b.Interval < 0 || (*b.Interval > 0 && *b.Interval < 5) || *b.Interval > 5256000 {
+				fail(w, 400, "invalid interval (0 or 5–5256000 minutes)")
 				return
 			}
 			job.IntervalMinutes = *b.Interval
