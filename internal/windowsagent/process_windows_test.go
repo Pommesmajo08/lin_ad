@@ -56,6 +56,39 @@ func TestPrivateDirectoryRejectsAdditionalPrincipal(t *testing.T) {
 	}
 }
 
+// Isolate host/.NET startup from suspended start and Job Object assignment.
+// If this fails, the process runner cannot be the cause of the startup hang.
+func TestNativePowerShellStartupWithoutJobObject(t *testing.T) {
+	d := privateTestDir(t)
+	t.Setenv("LINAD_TEST_SECRET", "must-not-be-inherited")
+	t.Setenv("PSModulePath", `C:\not-a-windows-powershell-module-path`)
+	path := filepath.Join(d, "startup.ps1")
+	source := `$ErrorActionPreference='Stop'
+if($env:LINAD_TEST_SECRET){throw 'agent environment leaked'}
+Import-Module Microsoft.PowerShell.Security -ErrorAction Stop
+[Console]::WriteLine('linad-startup-ok')
+exit 7
+`
+	if e := os.WriteFile(path, []byte(source), 0600); e != nil {
+		t.Fatal(e)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	program := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+	cmd := exec.CommandContext(ctx, program, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File", path)
+	cmd.Dir = d
+	cmd.Env = powerShellEnvironment(d, directory.JobRun{})
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000000}
+	out, e := cmd.CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("PowerShell startup without Job Object timed out: %v; output: %s", ctx.Err(), out)
+	}
+	exit, ok := e.(*exec.ExitError)
+	if !ok || exit.ExitCode() != 7 || !strings.Contains(string(out), "linad-startup-ok") {
+		t.Fatalf("PowerShell startup/module loading failed: %v; output: %s", e, out)
+	}
+}
+
 func TestNativePowerShellAndIntegrity(t *testing.T) {
 	d := privateTestDir(t)
 	_, source, hash, e := directory.NormalizeJobScript("powershell", "Write-Output 'Grüße'; exit 7\n")

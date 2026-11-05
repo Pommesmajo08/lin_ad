@@ -27,7 +27,7 @@ jobs:
       - name: Test protocol, local processes and Windows directory API
         shell: pwsh
         run: |
-          go test ./internal/windowsagent ./internal/directory
+          go test -v ./internal/windowsagent ./internal/directory
           if ($LASTEXITCODE) { throw 'Windows unit tests failed' }
           go vet ./internal/windowsagent ./cmd/windows-agent
           if ($LASTEXITCODE) { throw 'Windows vet failed' }

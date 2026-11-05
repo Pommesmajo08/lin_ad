@@ -50,6 +50,33 @@ type extendedLimits struct {
 	ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory uintptr
 }
 
+// Keep the Windows/.NET runtime environment, but do not pass agent credentials,
+// CI secrets or a PowerShell 7 PSModulePath to Windows PowerShell 5.1.
+func powerShellEnvironment(dir string, run directory.JobRun) []string {
+	env := make([]string, 0, 32)
+	for _, name := range []string{
+		"SystemRoot", "WINDIR", "SystemDrive", "ProgramData", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432",
+		"ALLUSERSPROFILE", "PUBLIC", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH",
+		"COMPUTERNAME", "USERNAME", "USERDOMAIN", "OS", "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS",
+	} {
+		if value, ok := os.LookupEnv(name); ok {
+			env = append(env, name+"="+value)
+		}
+	}
+	root := os.Getenv("SystemRoot")
+	home := filepath.Join(root, "System32", "WindowsPowerShell", "v1.0")
+	modules := filepath.Join(home, "Modules")
+	if programFiles := os.Getenv("ProgramFiles"); programFiles != "" {
+		modules += ";" + filepath.Join(programFiles, "WindowsPowerShell", "Modules")
+	}
+	return append(env,
+		"PATH="+filepath.Join(root, "System32")+";"+root+";"+home,
+		"ComSpec="+filepath.Join(root, "System32", "cmd.exe"),
+		"PSModulePath="+modules,
+		"TEMP="+dir, "TMP="+dir,
+		"LINAD_DEVICE_ID="+run.DeviceID, "LINAD_JOB_ID="+run.JobID, "LINAD_RUN_ID="+run.ID)
+}
+
 // Resume the initial CREATE_SUSPENDED thread with the documented Win32 API,
 // checking its suspend count instead of relying on process-wide NT resumption.
 func resumeInitialThread(pid uint32) error {
@@ -117,7 +144,7 @@ func runPowerShell(ctx context.Context, path, dir string, run directory.JobRun, 
 	cmd.Dir = dir
 	cmd.Stdout = out
 	cmd.Stderr = out
-	cmd.Env = []string{"SystemRoot=" + os.Getenv("SystemRoot"), "WINDIR=" + os.Getenv("SystemRoot"), "PATH=" + filepath.Join(os.Getenv("SystemRoot"), "System32"), "TEMP=" + dir, "TMP=" + dir, "LINAD_DEVICE_ID=" + run.DeviceID, "LINAD_JOB_ID=" + run.JobID, "LINAD_RUN_ID=" + run.ID}
+	cmd.Env = powerShellEnvironment(dir, run)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x08000004}
 	cmd.Cancel = func() error { closeJob(); return nil }
 	cmd.WaitDelay = 5 * time.Second

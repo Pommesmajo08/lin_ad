@@ -85,7 +85,7 @@ jobs:
       - name: Native Windows agent checks
         shell: pwsh
         run: |
-          go test ./internal/windowsagent ./internal/directory
+          go test -v ./internal/windowsagent ./internal/directory
           if ($LASTEXITCODE) { throw 'Native agent tests failed' }
           go build -o dist/linad-windows-agent-amd64.exe ./cmd/windows-agent
           if ($LASTEXITCODE) { throw 'Agent build failed' }
