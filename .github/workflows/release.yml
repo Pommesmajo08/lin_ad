@@ -103,6 +103,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
           name: release-assets
@@ -118,7 +122,11 @@ jobs:
             echo 'Release already exists; existing versions are never overwritten.' >&2
             exit 1
           fi
-          printf 'Download install.sh (Linux) or install-windows.cmd (Windows) to install directly from this release. Packages and SHA-256 checksums are attached.\n' > notes.md
+          if [ -f "docs/release-notes/$RELEASE_TAG.md" ]; then
+            cp "docs/release-notes/$RELEASE_TAG.md" notes.md
+          else
+            printf 'Download install.sh (Linux) or install-windows.cmd (Windows) to install directly from this release. Packages and SHA-256 checksums are attached.\n' > notes.md
+          fi
           if [[ "$RELEASE_TAG" == *-* ]]; then
             gh release create "$RELEASE_TAG" release/* --draft --prerelease --title "Linad $RELEASE_TAG" --notes-file notes.md
           else
