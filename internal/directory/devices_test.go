@@ -62,7 +62,7 @@ func TestDeviceAdministrationAndPolicy(t *testing.T) {
 		t.Fatal("policy persistence failed", err)
 	}
 	oldPath := s.path
-	s.path = "/dev/null/impossible"
+	s.path = impossibleStatePath(t)
 	request("PUT", "/v1/devices/"+d.ID+"/access", "admin", `{"allow_all":true}`, 500)
 	if s.state.Devices[d.ID].AllowAll {
 		t.Fatal("failed policy committed")

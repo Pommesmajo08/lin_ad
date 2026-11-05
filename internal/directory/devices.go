@@ -187,10 +187,6 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request, u User) {
 			next.Devices[d.ID] = d
 			result = publicDevice(d)
 		case len(parts) == 4 && parts[3] == "enrollment" && r.Method == "POST":
-			if d.OS != "linux" {
-				fail(w, 400, "Linux provisioning requires a Linux device")
-				return
-			}
 			token, err := randomToken(32)
 			if err != nil {
 				fail(w, 500, "enrollment failed")

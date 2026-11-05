@@ -74,3 +74,17 @@ func TestCustomScriptTimeout(t *testing.T) {
 		t.Fatal("script timeout did not terminate started process", code, output)
 	}
 }
+
+func TestWindowsJobsNeverExecuteOnLinux(t *testing.T) {
+	called := false
+	command := func(context.Context, string, []string, io.Writer) error { called = true; return nil }
+	code, _ := executeJob(context.Background(), "windows-update", command)
+	if code == 0 || called {
+		t.Fatal("Windows updates dispatched on Linux")
+	}
+	interpreter, source, hash, _ := directory.NormalizeJobScript("powershell", "Write-Output hello\n")
+	code, _ = executeRun(context.Background(), directory.JobRun{Kind: "custom-script", Interpreter: interpreter, Script: source, ScriptSHA256: hash}, command)
+	if code == 0 || called {
+		t.Fatal("PowerShell dispatched on Linux")
+	}
+}

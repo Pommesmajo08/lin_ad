@@ -26,6 +26,7 @@ func (s *Server) machineJobs(w http.ResponseWriter, r *http.Request, d Device) {
 		if d.LastJobPoll == nil || now.Sub(*d.LastJobPoll) >= time.Minute {
 			device := next.Devices[d.ID]
 			device.LastJobPoll = &now
+			device.LastSeen = now
 			next.Devices[d.ID] = device
 			changed = true
 		}

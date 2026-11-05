@@ -48,6 +48,16 @@ sudo --preserve-env=GH_TOKEN sh install.sh device
 
 Unter Windows übernehmen `install-windows.cmd` und `install.ps1` dieselbe Umgebungsvariable. Nach der Installation `GH_TOKEN` aus dem Terminal entfernen. Keine persönlichen Tokens in kopierte Installationsbefehle, Skripte oder Enrollment-Dialoge einfügen.
 
+## Windows-Geräte zentral verwalten
+
+Zusätzlich zur Windows-GUI gibt es einen eigenen **Windows-Geräteagenten** für Hintergrundjobs als SYSTEM-Dienst. In der Webverwaltung ein Windows-Gerät registrieren, **Windows-Agent einrichten** wählen und `install-agent-windows.cmd` aus dem Release herunterladen. In einer Administrator-PowerShell:
+
+```powershell
+.\install-agent-windows.cmd -Server https://directory.example -DeviceID DEVICE_ID
+```
+
+Alternativ `install-agent-windows.cmd` aus dem Release **als Administrator** starten. Der Agent unterstützt Inventar, Windows-Updates und eigene PowerShell-Jobs. Updates verwenden den vorhandenen Geräteschlüssel. Details zu Einrichtung, TLS, Dienst und Wiederherstellung: [Windows-Geräteagent](windows-agent.md).
+
 ## Welches Paket brauche ich?
 
 | Ziel | Paket | Start |
@@ -55,6 +65,7 @@ Unter Windows übernehmen `install-windows.cmd` und `install.ps1` dieselbe Umgeb
 | Server auf einem Linux-Docker-Host | `linad-server-docker.tar.gz` | `sudo sh scripts/install-server.sh` |
 | Ubuntu/Debian an Linad anbinden (PAM, sudo, Jobs) | `linad-linux-provisioner-amd64.tar.gz` oder `arm64` | `sudo sh scripts/install-linux.sh` |
 | Verwaltung unter Linux, ohne Systemanbindung | `linad-client-linux-amd64.tar.gz` | `sh scripts/install-client-linux.sh` |
+| Windows-Gerätejobs als SYSTEM-Dienst | `linad-windows-agent-amd64.zip` | `powershell -NoProfile -File .\scripts\install-windows-agent.ps1` |
 | Verwaltung unter Windows | `linad-client-windows-amd64.zip` | `powershell -NoProfile -File .\scripts\install-client.ps1` |
 
 Pakete jeweils in einen eigenen Ordner **vollständig entpacken**, dann im entpackten Ordner den Befehl ausführen. Der GUI-Client verwaltet Linad; für Linux-Systemanmeldung und Root-Jobs ist zusätzlich der Geräte-Provisioner erforderlich. Windows-Systemanmeldung ist weiterhin nicht enthalten.

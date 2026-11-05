@@ -1,6 +1,6 @@
 # Automatisierung und geplante Linux-Jobs
 
-Administratoren öffnen in der Webverwaltung den Bereich **Automatisierung** und dort **Neuen Job anlegen**, oder verwenden den CLI-Client. Bestehende Jobs zeigen Geräte- und Zeitplaneinstellungen unter **Geräte und Zeitplan bearbeiten**. Fehler beim Speichern erscheinen direkt am Formular; bei einem Fehler bleibt die Eingabe erhalten. Normale Benutzer dürfen weder Jobs anlegen noch deren Ausgaben lesen. Der Server ordnet Ausführungen Geräten zu; der Root-Dienst auf jedem Linux-Gerät holt sie ab. Windows-Jobs sind in dieser Version nicht enthalten. Eigene Linux-Skripte werden unten beschrieben.
+Administratoren öffnen in der Webverwaltung den Bereich **Automatisierung** und dort **Neuen Job anlegen**, oder verwenden den CLI-Client. Bestehende Jobs zeigen Geräte- und Zeitplaneinstellungen unter **Geräte und Zeitplan bearbeiten**. Fehler beim Speichern erscheinen direkt am Formular; bei einem Fehler bleibt die Eingabe erhalten. Normale Benutzer dürfen weder Jobs anlegen noch deren Ausgaben lesen. Der Server ordnet Ausführungen Geräten zu; der Root-Dienst auf jedem Linux-Gerät holt sie ab. Windows-Geräte verwenden den [Windows-Agenten](windows-agent.md); sie unterstützen `system-info`, `windows-update` und PowerShell-Skripte. Linux-Aktionen sind nicht an Windows-Geräte zuweisbar. Eigene Linux-Skripte werden unten beschrieben; Windows verwendet den Interpreter `powershell`.
 
 ## Jobtypen
 
@@ -33,7 +33,7 @@ Die Ausführung nutzt die Geräteidentität, unabhängig davon, welche Benutzer 
 4. Abstand und Zeiteinheit wählen: Minuten, Stunden, Tage, Wochen oder Jahre. Zum Beispiel `2` und **Wochen** für alle 14 Tage; `0` bedeutet einmalig. Möglich sind ganze Zahlen mit einem Gesamtabstand von 5 Minuten bis 10 Jahren. Ein Jahr entspricht fest 365 Tagen. Beim Bearbeiten werden bestehende Intervalle automatisch in einer passenden Einheit angezeigt. CLI und API verwenden weiterhin Minuten.
 5. „Job anlegen“ wählen. Die Ausführung beginnt beim nächsten Geräteabruf, normalerweise innerhalb von 15 Sekunden bei einem erreichbaren, aktuellen Client.
 
-Zeitangaben werden im Browser lokal eingegeben und serverseitig als UTC gespeichert. Wiederholungen sind feste Zeitabstände, keine kalenderbasierten Cron-Termine; Sommerzeitwechsel können die angezeigte lokale Uhrzeit verschieben. Pro Vorlage können maximal 100 Linux-Geräte zugeordnet werden.
+Zeitangaben werden im Browser lokal eingegeben und serverseitig als UTC gespeichert. Wiederholungen sind feste Zeitabstände, keine kalenderbasierten Cron-Termine; Sommerzeitwechsel können die angezeigte lokale Uhrzeit verschieben. Pro Vorlage können maximal 100 passende Geräte zugeordnet werden.
 
 Vorlagen lassen sich pausieren, reaktivieren, neu terminieren, anderen Geräten zuordnen und löschen. „Jetzt ausführen“ reiht einen neuen Lauf für die zugeordneten Geräte ein, auch bei pausiertem Zeitplan. Solange für denselben Job/Gerät ein Lauf wartet, läuft oder ungeklärt ist, verhindert der Server eine doppelte Einreihung. Bei einem solchen Konflikt wird der manuelle Aufruf insgesamt abgelehnt.
 

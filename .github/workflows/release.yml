@@ -74,6 +74,16 @@ jobs:
           & ./scripts/install-client.ps1 -InstallDir $testDir -Uninstall
           if (Test-Path (Join-Path $testDir 'linad-client.exe')) { throw 'CLI not removed' }
           $null = [scriptblock]::Create((Get-Content ./scripts/install-release.ps1 -Raw))
+      - name: Native Windows agent checks
+        shell: pwsh
+        run: |
+          go test ./internal/windowsagent ./internal/directory
+          if ($LASTEXITCODE) { throw 'Native agent tests failed' }
+          go build -o dist/linad-windows-agent-amd64.exe ./cmd/windows-agent
+          if ($LASTEXITCODE) { throw 'Agent build failed' }
+          go build -o dist/linad-server-windows-test.exe ./cmd/server
+          if ($LASTEXITCODE) { throw 'Test server build failed' }
+          & ./tests/windows/integration.ps1
   publish:
     needs: [build, windows]
     runs-on: ubuntu-24.04

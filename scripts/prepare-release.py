@@ -14,6 +14,8 @@ assets={
     'linad-client-windows-amd64.zip':'dist/linad-client-windows-amd64.zip',
     'linad-linux-provisioner-amd64.tar.gz':'dist/linad-linux-provisioner-amd64.tar.gz',
     'linad-linux-provisioner-arm64.tar.gz':'dist/linad-linux-provisioner-arm64.tar.gz',
+    'linad-windows-agent-amd64.zip':'dist/linad-windows-agent-amd64.zip',
+    'install-agent-windows.cmd':'install-agent-from-release.cmd',
     'installation.md':'docs/installation.md',
 }
 # Validate completeness before replacing any previous output.

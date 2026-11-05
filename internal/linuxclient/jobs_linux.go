@@ -71,7 +71,7 @@ type jobCommand func(context.Context, string, []string, io.Writer) error
 
 func executeJob(ctx context.Context, kind string, command jobCommand) (int, string) {
 	output := &limitedLog{}
-	if !directory.ValidJobKind(kind) || kind == "custom-script" {
+	if !directory.JobSupportsOS(kind, "", "linux") || kind == "custom-script" {
 		return 1, "Unsupported job kind; no command executed."
 	}
 	if kind == "system-info" {

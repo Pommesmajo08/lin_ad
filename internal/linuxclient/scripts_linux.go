@@ -15,7 +15,7 @@ func executeRun(ctx context.Context, run directory.JobRun, command jobCommand) (
 		return executeJob(ctx, run.Kind, command)
 	}
 	interpreter, source, hash, err := directory.NormalizeJobScript(run.Interpreter, run.Script)
-	if err != nil || hash != run.ScriptSHA256 {
+	if err != nil || interpreter == "powershell" || hash != run.ScriptSHA256 {
 		return 1, "Script validation/integrity check failed; no code executed."
 	}
 	workdir, err := os.MkdirTemp("", "linad-script-*")

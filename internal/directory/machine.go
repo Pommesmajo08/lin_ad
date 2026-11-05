@@ -13,6 +13,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	var b struct {
 		DeviceID string `json:"device_id"`
 		Token    string `json:"enrollment_token"`
+		OS       string `json:"os"`
 	}
 	if !decode(w, r, &b) {
 		return
@@ -20,7 +21,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	d, ok := s.state.Devices[b.DeviceID]
-	if !ok || d.OS != "linux" || d.EnrollmentHash == "" || time.Now().After(d.EnrollmentExpires) || len(b.Token) != 64 || subtle.ConstantTimeCompare([]byte(tokenKey(b.Token)), []byte(d.EnrollmentHash)) != 1 {
+	if !ok || (b.OS != "" && b.OS != d.OS) || (d.OS != "linux" && d.OS != "windows") || d.EnrollmentHash == "" || time.Now().After(d.EnrollmentExpires) || len(b.Token) != 64 || subtle.ConstantTimeCompare([]byte(tokenKey(b.Token)), []byte(d.EnrollmentHash)) != 1 {
 		fail(w, 401, "invalid or expired enrollment token")
 		return
 	}
@@ -59,12 +60,20 @@ func (s *Server) machine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d, ok := s.state.Devices[parts[0]]
-	if !ok || d.OS != "linux" || d.CredentialHash == "" || subtle.ConstantTimeCompare([]byte(tokenKey(parts[1])), []byte(d.CredentialHash)) != 1 {
+	if !ok || (d.OS != "linux" && d.OS != "windows") || d.CredentialHash == "" || subtle.ConstantTimeCompare([]byte(tokenKey(parts[1])), []byte(d.CredentialHash)) != 1 {
 		fail(w, 401, "invalid device credential")
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/machine/jobs/") {
 		s.machineJobs(w, r, d)
+		return
+	}
+	if r.URL.Path == "/v1/machine/info" && r.Method == "GET" {
+		reply(w, 200, map[string]string{"device_id": d.ID, "os": d.OS})
+		return
+	}
+	if d.OS != "linux" {
+		fail(w, 403, "Windows agents only support device jobs")
 		return
 	}
 	if r.URL.Path == "/v1/machine/users" && r.Method == "GET" {

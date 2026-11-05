@@ -161,7 +161,7 @@ func (c *Client) Enroll(ctx context.Context, token, configPath string) error {
 		DeviceID string `json:"device_id"`
 		Secret   string `json:"secret"`
 	}
-	if err := c.request(ctx, "POST", "/v1/enroll", map[string]string{"device_id": c.Config.DeviceID, "enrollment_token": token}, &response, false); err != nil {
+	if err := c.request(ctx, "POST", "/v1/enroll", map[string]string{"device_id": c.Config.DeviceID, "enrollment_token": token, "os": "linux"}, &response, false); err != nil {
 		return err
 	}
 	if response.DeviceID != c.Config.DeviceID || len(response.Secret) != 64 || strings.Trim(response.Secret, "0123456789abcdef") != "" {

@@ -87,6 +87,7 @@ const translations = {
   'administrator required': 'Dafür sind Administratorrechte erforderlich.',
   'a run is already pending for this job and device': 'Für diesen Job wartet oder läuft bereits eine Ausführung. Unklare Läufe zuerst prüfen und freigeben.',
   'only queued runs can be cancelled': 'Dieser Lauf hat bereits begonnen und wird nicht während einer Paketoperation abgebrochen.',
+  'job action/interpreter does not support the selected device OS': 'Aktion und Interpreter passen nicht zum Betriebssystem der ausgewählten Geräte.',
   'job not found': 'Dieser Job existiert nicht mehr.'
 };
 async function action(callback, form = document.activeElement?.closest('form')) {
@@ -286,9 +287,9 @@ function renderDevicePolicies(devices, users, groups) {
   const area = $('device-policies'); area.replaceChildren(); area.hidden = false;
   devices.forEach(device => {
     const card = element('section', undefined, 'card device-policy');
-    card.append(element('h2', `Anmeldezugriff · ${device.name}`));
+    card.append(element('h2', `${device.os === 'windows' ? 'Geräteverwaltung' : 'Anmeldezugriff'} · ${device.name}`));
     const state = device.provisioned ? 'Geräte-Schlüssel aktiv' : 'Noch nicht provisioniert';
-    card.append(element('p', `${device.os === 'linux' ? state : 'Windows: nur Inventar'} · ID ${device.id}`, 'muted fine'));
+    card.append(element('p', `${state} · ID ${device.id}`, 'muted fine'));
     const form = element('form', undefined, 'policy-form');
     const allLabel = element('label', undefined, 'checkbox');
     const all = element('input'); all.type = 'checkbox'; all.name = 'allow_all'; all.checked = device.allow_all;
@@ -308,21 +309,27 @@ function renderDevicePolicies(devices, users, groups) {
         allowed_groups: [...groupSelect.selectedOptions].map(option => option.value)
       }, 'Anmeldezugriff gespeichert.'));
     });
-    card.append(form, element('p', 'Mehrfachauswahl mit Strg/Cmd. Ohne Freigabe darf sich niemand anmelden. Gesperrte Konten bleiben immer ausgeschlossen.', 'muted fine'));
-    if (device.os === 'linux') {
+    if (device.os === 'linux') card.append(form, element('p', 'Mehrfachauswahl mit Strg/Cmd. Ohne Freigabe darf sich niemand anmelden. Gesperrte Konten bleiben immer ausgeschlossen.', 'muted fine'));
+    if (device.os === 'windows') card.append(element('p', 'Windows-Agent: Inventar, Updates und PowerShell-Jobs. Windows-Anmeldung und lokale Benutzerkonten werden nicht durch diese Freigaben verwaltet.', 'muted fine'));
+    {
       const actions = element('div', undefined, 'policy-actions');
-      actions.append(button('Linux provisionieren', async () => {
+      actions.append(button(device.os === 'windows' ? 'Windows-Agent einrichten' : 'Linux provisionieren', async () => {
         const enrollment = await api('POST', `/v1/devices/${pathName(device.id)}/enrollment`);
+        $('enrollment-download').href = 'https://github.com/Pommesmajo08/lin_ad/releases/latest/download/' + (device.os === 'windows' ? 'install-agent-windows.cmd' : 'install.sh');
+        $('enrollment-title').textContent = device.os === 'windows' ? 'Windows-Agent einrichten (Administrator-PowerShell)' : 'Linux-Gerät provisionieren';
         $('enrollment-device').textContent = `${device.name} · Geräte-ID: ${device.id}`;
         const server = localSecret ? $('server-address').textContent : location.origin;
         const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
-        $('enrollment-command').value = `sudo --preserve-env=GH_TOKEN sh install.sh device -- --server ${quote(server)} --device-id ${quote(device.id)}${server.startsWith('http:') ? ' --allow-http' : ''}`;
+        if (device.os === 'windows') {
+          const psQuote = value => "'" + value.replaceAll("'", "''") + "'";
+          $('enrollment-command').value = `.\\install-agent-windows.cmd -Server ${psQuote(server)} -DeviceID ${psQuote(device.id)}${server.startsWith('http:') ? ' -AllowHttp' : ''}`;
+        } else { $('enrollment-command').value = `sudo --preserve-env=GH_TOKEN sh install.sh device -- --server ${quote(server)} --device-id ${quote(device.id)}${server.startsWith('http:') ? ' --allow-http' : ''}`; }
         $('enrollment-token').value = enrollment.enrollment_token;
         $('enrollment-expiry').textContent = `Gültig bis ${new Date(enrollment.expires_at).toLocaleString()}`;
         $('enrollment-panel').hidden = false; $('enrollment-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });
       }));
       actions.append(button('Gerätezugang widerrufen', async () => {
-        if (!confirm(`Geräte-Schlüssel für ${device.name} widerrufen? Neue Linux-Anmeldungen werden damit gesperrt.`)) return;
+        if (!confirm(`Geräte-Schlüssel für ${device.name} widerrufen? Neue Geräteabrufe werden gesperrt; verwaltete Linux-Anmeldungen werden ebenfalls blockiert.`)) return;
         await api('DELETE', `/v1/devices/${pathName(device.id)}/credential`);
         hideEnrollment(); await refresh(); message('Gerätezugang widerrufen.');
       }, 'danger'));
@@ -333,7 +340,7 @@ function renderDevicePolicies(devices, users, groups) {
 }
 
 
-const jobKindLabels = { 'system-info': 'Systeminformationen', 'apt-refresh': 'Paketlisten aktualisieren', 'apt-upgrade': 'Paketupdates installieren', 'custom-script': 'Eigenes Root-Skript' };
+const jobKindLabels = { 'system-info': 'Systeminformationen', 'apt-refresh': 'Paketlisten aktualisieren', 'apt-upgrade': 'Paketupdates installieren', 'windows-update': 'Windows-Updates installieren', 'custom-script': 'Eigenes Skript (Root/SYSTEM)' };
 const jobStatusLabels = { queued: 'Wartet', running: 'Läuft', succeeded: 'Erfolgreich', failed: 'Fehlgeschlagen', unknown: 'Unklar', cancelled: 'Vor Start abgebrochen' };
 const intervalUnits = [[525600, 'Jahre (365 Tage)', 'Jahr', 'Jahre'], [10080, 'Wochen', 'Woche', 'Wochen'], [1440, 'Tage', 'Tag', 'Tage'], [60, 'Stunden', 'Stunde', 'Stunden'], [1, 'Minuten', 'Minute', 'Minuten']];
 function splitInterval(minutes) {
@@ -355,11 +362,12 @@ function jobDeviceName(id) { return jobDeviceCache.find(device => device.id === 
 function jobDate(value) { return value ? new Date(value).toLocaleString() : '—'; }
 async function refreshJobs() {
   const devices = await api('GET', '/v1/devices');
-  jobDeviceCache = devices.filter(device => device.os === 'linux');
+  jobDeviceCache = devices.filter(device => ['linux', 'windows'].includes(device.os));
   const selectedJobDevices = [...$('job-devices').selectedOptions].map(option => option.value);
   $('job-devices').replaceChildren();
   jobDeviceCache.forEach(device => { const option = element('option', device.name + (!device.provisioned ? ' (noch nicht provisioniert)' : !device.last_job_poll ? ' (noch kein Jobabruf)' : '')); option.value = device.id; option.selected = selectedJobDevices.includes(device.id); $('job-devices').append(option); });
 
+  filterJobDevices();
   const jobs = await api('GET', '/v1/jobs');
   $('jobs').replaceChildren();
   if (!jobs.length) $('jobs').append(element('p', 'Noch keine Jobs angelegt.', 'muted'));
@@ -370,7 +378,7 @@ async function refreshJobs() {
     card.append(element('p', `Nächster Start: ${job.next_run_at ? jobDate(job.next_run_at) : 'Kein weiterer Start geplant'} · Erstellt von ${job.created_by}`, 'muted fine'));
     const settings = element('details', undefined, 'job-settings'); settings.append(element('summary', 'Geräte und Zeitplan bearbeiten')); card.append(settings);
     const form = element('form', undefined, 'inline'); const label = element('label', 'Zugewiesene Geräte'); const select = element('select'); select.multiple = true; select.size = 3;
-    jobDeviceCache.forEach(device => { const option = element('option', device.name); option.value = device.id; option.selected = job.device_ids.includes(device.id); select.append(option); });
+    jobDeviceCache.filter(device => jobSupportsOS(job.kind, job.interpreter, device.os)).forEach(device => { const option = element('option', device.name); option.value = device.id; option.selected = job.device_ids.includes(device.id); select.append(option); });
     select.required = true; label.append(select); const save = element('button', 'Gerätezuordnung speichern'); save.type = 'submit'; form.append(label, save);
     form.addEventListener('submit', event => { event.preventDefault(); action(async () => { await api('PATCH', `/v1/jobs/${pathName(job.id)}`, { device_ids: [...select.selectedOptions].map(option => option.value) }); await refreshJobs(); message('Gerätezuordnung gespeichert.'); }, form); }); settings.append(form);
     if (job.kind === 'custom-script') {
@@ -381,10 +389,10 @@ async function refreshJobs() {
         const detail = await api('GET', `/v1/jobs/${pathName(job.id)}`);
         const editor = element('form', undefined, 'script-editor');
         const label = element('label', 'Interpreter'); const interpreter = element('select');
-        ['bash', 'sh', 'python3'].forEach(value => { const option = element('option', { bash: 'Bash', sh: 'POSIX sh', python3: 'Python 3' }[value]); option.value = value; option.selected = value === detail.interpreter; interpreter.append(option); }); label.append(interpreter);
+        (detail.interpreter === 'powershell' ? ['powershell'] : ['bash', 'sh', 'python3']).forEach(value => { const option = element('option', { bash: 'Bash', sh: 'POSIX sh', python3: 'Python 3', powershell: 'PowerShell' }[value]); option.value = value; option.selected = value === detail.interpreter; interpreter.append(option); }); label.append(interpreter);
         const scriptLabel = element('label', 'Skript für künftige Läufe'); const source = element('textarea'); source.required = true; source.rows = 12; source.spellcheck = false; source.value = detail.script; scriptLabel.append(source);
         const save = element('button', 'Skript speichern'); save.type = 'submit';
-        editor.append(label, scriptLabel, element('p', 'Ausführung als Root. Bereits eingereihte und laufende Jobs behalten ihre bisherige Skriptversion.', 'script-warning'), save);
+        editor.append(label, scriptLabel, element('p', 'Ausführung als Root/SYSTEM. Bereits eingereihte und laufende Jobs behalten ihre bisherige Skriptversion.', 'script-warning'), save);
         editor.addEventListener('submit', event => { event.preventDefault(); action(async () => { validateScriptSource(source.value); await api('PATCH', `/v1/jobs/${pathName(job.id)}`, { script: source.value, interpreter: interpreter.value }); await refreshJobs(); message('Skript für neue Läufe gespeichert.'); }, editor); }); editorArea.append(editor);
       })); card.append(editorArea);
     }
@@ -443,21 +451,39 @@ setInterval(() => {
   }
 }, 15000);
 
+function jobSupportsOS(kind, interpreter, os) {
+  if (kind === 'system-info') return ['linux', 'windows'].includes(os);
+  if (kind === 'windows-update') return os === 'windows';
+  if (kind === 'custom-script' && interpreter === 'powershell') return os === 'windows';
+  return os === 'linux';
+}
+function filterJobDevices() {
+  const form = $('job-form');
+  for (const option of $('job-devices').options) {
+    const device = jobDeviceCache.find(device => device.id === option.value);
+    option.disabled = !device || !jobSupportsOS(form.elements.kind.value, form.elements.interpreter.value, device.os);
+    option.hidden = option.disabled; if (option.disabled) option.selected = false;
+  }
+}
 function syncScriptFields() {
   const custom = $('job-form').elements.kind.value === 'custom-script';
   $('job-script-fields').hidden = !custom;
   $('job-form').elements.script.required = custom;
+  filterJobDevices();
 }
 function validateScriptSource(source) {
   if (!source.trim() || source.includes('\0') || new TextEncoder().encode(source.replace(/\r\n/g, '\n')).length > 16384) throw new Error('Das Skript muss gültigen Text ohne NUL enthalten und darf höchstens 16 KiB groß sein.');
 }
+$('job-form').elements.interpreter.addEventListener('change', filterJobDevices);
 $('job-form').elements.kind.addEventListener('change', syncScriptFields);
 $('job-script-file').addEventListener('change', event => action(async () => {
   const file = event.target.files[0]; if (!file) return;
   if (file.size > 16384) throw new Error('Die Skriptdatei darf höchstens 16 KiB groß sein.');
   const source = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()); validateScriptSource(source);
   $('job-form').elements.script.value = source;
+  if (file.name.toLowerCase().endsWith('.ps1')) $('job-form').elements.interpreter.value = 'powershell';
   if (file.name.toLowerCase().endsWith('.py')) $('job-form').elements.interpreter.value = 'python3';
+  filterJobDevices();
 }));
 $('run-script-close').addEventListener('click', () => { $('run-script-dialog').close(); $('run-script-source').value = ''; });
 syncScriptFields();

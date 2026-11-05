@@ -14,8 +14,8 @@ func NormalizeJobScript(interpreter, source string) (string, string, string, err
 	if interpreter == "" {
 		interpreter = "bash"
 	}
-	if interpreter != "sh" && interpreter != "bash" && interpreter != "python3" {
-		return "", "", "", errors.New("interpreter must be sh, bash or python3")
+	if interpreter != "sh" && interpreter != "bash" && interpreter != "python3" && interpreter != "powershell" {
+		return "", "", "", errors.New("interpreter must be sh, bash, python3 or powershell")
 	}
 	source = strings.TrimPrefix(strings.ReplaceAll(source, "\r\n", "\n"), "\ufeff")
 	if len(source) > MaxJobScript || strings.TrimSpace(source) == "" || !utf8.ValidString(source) || strings.ContainsRune(source, 0) {

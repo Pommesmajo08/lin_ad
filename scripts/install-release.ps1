@@ -1,10 +1,25 @@
-# Standalone GitHub Releases bootstrapper for Windows AMD64, no admin required.
+﻿# Standalone GitHub Releases bootstrapper: per-user client or elevated device agent.
 [CmdletBinding()]
 param(
     [string]$Version = 'latest',
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\Linad')
+    [ValidateSet('client','device')][string]$Component = 'client',
+    [string]$InstallDir,
+    [string]$Server,
+    [string]$DeviceID,
+    [string]$CaFile,
+    [switch]$AllowHttp,
+    [switch]$NoStart,
+    [switch]$Check,
+    [switch]$Reenroll,
+    [switch]$Uninstall
 )
 $ErrorActionPreference = 'Stop'
+if ($Component -eq 'device') {
+    $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Windows-Geräteagent: PowerShell als Administrator starten.' }
+    if (-not $InstallDir) { $InstallDir = Join-Path $env:ProgramFiles 'LinadAgent' }
+} elseif (-not $InstallDir) { $InstallDir = Join-Path $env:LOCALAPPDATA 'Programs\Linad' }
+
 $repo = 'https://github.com/Pommesmajo08/lin_ad'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64' -and $env:PROCESSOR_ARCHITEW6432 -ne 'AMD64') {
@@ -34,6 +49,7 @@ $work = Join-Path ([IO.Path]::GetTempPath()) ('linad-' + [Guid]::NewGuid().ToStr
 New-Item -ItemType Directory -Path $work | Out-Null
 try {
     $package = 'linad-client-windows-amd64.zip'
+    if ($Component -eq 'device') { $package = 'linad-windows-agent-amd64.zip' }
     $base = "$repo/releases/download/$Version"
     Write-Host "Linad $Version herunterladen ..."
     if ($release) {
@@ -54,8 +70,15 @@ try {
     if ($expected -ne $actual) { throw 'Prüfsumme stimmt nicht überein. Installation abgebrochen.' }
     Write-Host 'Prüfsumme stimmt. Paket entpacken ...'
     Expand-Archive -LiteralPath (Join-Path $work $package) -DestinationPath (Join-Path $work 'package')
-    & (Join-Path $work 'package\scripts\install-client.ps1') -InstallDir $InstallDir
-    Write-Host "Linad $Version installiert. Im Startmenü Linad öffnen."
+    if ($Component -eq 'device') {
+        $options = @{ InstallDir=$InstallDir; AllowHttp=$AllowHttp; NoStart=$NoStart; Check=$Check; Reenroll=$Reenroll; Uninstall=$Uninstall }
+        if ($Server) { $options.Server=$Server }; if ($DeviceID) { $options.DeviceID=$DeviceID }; if ($CaFile) { $options.CaFile=$CaFile }
+        & (Join-Path $work 'package\scripts\install-windows-agent.ps1') @options
+    } else { & (Join-Path $work 'package\scripts\install-client.ps1') -InstallDir $InstallDir -Uninstall:$Uninstall }
+    if ($Check) { Write-Host 'Vorabprüfung abgeschlossen.' }
+    elseif ($Uninstall) { Write-Host 'Linad-Komponente entfernt.' }
+    elseif ($Component -eq 'device') { Write-Host "Windows-Geräteagent $Version eingerichtet. Dienst: LinadAgent" }
+    else { Write-Host "Linad $Version installiert. Im Startmenü Linad öffnen." }
 } finally {
     Remove-Item -LiteralPath $work -Recurse -Force
 }

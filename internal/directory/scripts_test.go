@@ -62,7 +62,7 @@ func TestCustomScriptPermissionsSnapshotsAndEditing(t *testing.T) {
 		t.Fatal("history list leaked source")
 	}
 	oldPath := s.path
-	s.path = "/dev/null/impossible"
+	s.path = impossibleStatePath(t)
 	request("PATCH", "/v1/jobs/"+job.ID, admin, map[string]string{"script": "echo changed\n"}, 500)
 	s.path = oldPath
 	if s.state.Jobs[job.ID].Script != job.Script {

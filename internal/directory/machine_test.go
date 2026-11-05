@@ -43,7 +43,7 @@ func TestEnrollmentAndLinuxAuthentication(t *testing.T) {
 	request("POST", "/v1/enroll", "", `{"device_id":"`+device.ID+`","enrollment_token":"invalid"}`, 401)
 	body := `{"device_id":"` + device.ID + `","enrollment_token":"` + enrollment.Token + `"}`
 	oldPath := s.path
-	s.path = "/dev/null/impossible"
+	s.path = impossibleStatePath(t)
 	request("POST", "/v1/enroll", "", body, 500)
 	s.path = oldPath
 	var credential struct {

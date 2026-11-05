@@ -49,7 +49,7 @@ type JobRun struct {
 }
 
 func ValidJobKind(kind string) bool {
-	return kind == "system-info" || kind == "apt-refresh" || kind == "apt-upgrade" || kind == "custom-script"
+	return kind == "system-info" || kind == "apt-refresh" || kind == "apt-upgrade" || kind == "windows-update" || kind == "custom-script"
 }
 func copyJobState(st State) State {
 	data, _ := json.Marshal(st)
@@ -90,7 +90,7 @@ func queueJob(st *State, job Job, now time.Time, manual bool) error {
 	targets := []string{}
 	for _, id := range job.DeviceIDs {
 		d, ok := st.Devices[id]
-		if !ok || d.OS != "linux" {
+		if !ok || !JobSupportsOS(job.Kind, job.Interpreter, d.OS) {
 			continue
 		}
 		active := false
@@ -160,12 +160,40 @@ func advanceJobs(st *State, now time.Time) bool {
 }
 func validateJobTargets(st State, ids []string) error {
 	if len(ids) == 0 || len(ids) > 100 {
-		return errors.New("assign between 1 and 100 Linux devices")
+		return errors.New("assign between 1 and 100 devices")
 	}
 	for _, id := range ids {
 		d, ok := st.Devices[id]
-		if !ok || d.OS != "linux" {
-			return errors.New("jobs require existing Linux devices")
+		if !ok || (d.OS != "linux" && d.OS != "windows") {
+			return errors.New("jobs require existing Linux or Windows devices")
+		}
+	}
+	return nil
+}
+
+// JobSupportsOS prevents cross-platform commands even when using the API directly.
+func JobSupportsOS(kind, interpreter, os string) bool {
+	if kind == "system-info" {
+		return os == "linux" || os == "windows"
+	}
+	if kind == "windows-update" {
+		return os == "windows"
+	}
+	if kind == "custom-script" {
+		if interpreter == "powershell" {
+			return os == "windows"
+		}
+		return os == "linux"
+	}
+	return os == "linux" && (kind == "apt-refresh" || kind == "apt-upgrade")
+}
+func validateJobPlatform(st State, j Job) error {
+	if err := validateJobTargets(st, j.DeviceIDs); err != nil {
+		return err
+	}
+	for _, id := range j.DeviceIDs {
+		if !JobSupportsOS(j.Kind, j.Interpreter, st.Devices[id].OS) {
+			return errors.New("job action/interpreter does not support the selected device OS")
 		}
 	}
 	return nil
@@ -292,6 +320,10 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request, u User) {
 		}
 		enabled := b.Enabled == nil || *b.Enabled
 		job := Job{ID: id, Name: b.Name, Kind: b.Kind, Script: script, Interpreter: interpreter, ScriptSHA256: hash, DeviceIDs: uniqueNames(b.DeviceIDs), Enabled: enabled, IntervalMinutes: b.Interval, NextRunAt: &start, CreatedAt: now, CreatedBy: u.Name}
+		if err := validateJobPlatform(next, job); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
 		next.Jobs[id] = job
 		advanceJobs(&next, now)
 		result = next.Jobs[id]
@@ -366,6 +398,10 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request, u User) {
 				job.NextRunAt = &now
 			}
 		}
+		if err := validateJobPlatform(next, job); err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
 		allowed := map[string]bool{}
 		for _, id := range job.DeviceIDs {
 			allowed[id] = true
@@ -386,7 +422,7 @@ func (s *Server) jobs(w http.ResponseWriter, r *http.Request, u User) {
 			fail(w, 404, "job not found")
 			return
 		}
-		if err := validateJobTargets(next, job.DeviceIDs); err != nil {
+		if err := validateJobPlatform(next, job); err != nil {
 			fail(w, 400, err.Error())
 			return
 		}

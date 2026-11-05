@@ -17,6 +17,7 @@ Assets:
 - `linad-server-docker.tar.gz`: Server-Image plus Installer
 - `linad-linux-provisioner-amd64.tar.gz`, `linad-linux-provisioner-arm64.tar.gz`
 - `linad-client-linux-amd64.tar.gz`, `linad-client-windows-amd64.zip`
+- `linad-windows-agent-amd64.zip`, `install-agent-windows.cmd`: Windows-Geräteagent als SYSTEM-Dienst
 - `installation.md`, `SHA256SUMS`
 
 Lokale Vorbereitung ohne Veröffentlichung:

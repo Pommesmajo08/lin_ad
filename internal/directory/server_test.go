@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ func TestFailedPersistenceDoesNotCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.path = "/dev/null/impossible"
+	s.path = impossibleStatePath(t)
 	s.sessions[tokenKey("test")] = session{User: "admin", Expires: time.Now().Add(time.Hour)}
 	r := httptest.NewRequest("POST", "/v1/groups", strings.NewReader(`{"name":"team"}`))
 	r.Header.Set("Authorization", "Bearer test")
@@ -115,4 +116,14 @@ func TestSessionAndRateLimits(t *testing.T) {
 	if w.Code != 429 {
 		t.Fatal(w.Code)
 	}
+}
+
+// Fail persistence on every OS by placing a regular file where a parent directory is required.
+func impossibleStatePath(t *testing.T) string {
+	t.Helper()
+	blocker := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return filepath.Join(blocker, "state.json")
 }

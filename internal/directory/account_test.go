@@ -75,7 +75,7 @@ func TestAccountSecurity(t *testing.T) {
 	request("GET", "/v1/me", alice, "", 401)
 	// A failed self-service password write must preserve both the password and sessions.
 	alice = login("another-long-password")
-	s.path = "/dev/null/impossible"
+	s.path = impossibleStatePath(t)
 	request("POST", "/v1/password", alice, `{"current_password":"another-long-password","new_password":"never-committed-password"}`, 500)
 	request("GET", "/v1/me", alice, "", 200)
 	if s.state.Users["alice"].Hash != derive("another-long-password", s.state.Users["alice"].Salt) {

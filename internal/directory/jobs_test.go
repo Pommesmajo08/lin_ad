@@ -49,7 +49,7 @@ func TestJobsClaimsPermissionsAndResults(t *testing.T) {
 	request("POST", "/v1/jobs", admin, `{"name":"bad","kind":"system-info","device_ids":["missing"]}`, 400)
 	create := `{"name":"Inventory","kind":"system-info","device_ids":["` + a + `","` + b + `"],"interval_minutes":0}`
 	old := s.path
-	s.path = "/dev/null/impossible"
+	s.path = impossibleStatePath(t)
 	request("POST", "/v1/jobs", admin, create, 500)
 	s.path = old
 	if len(s.state.Jobs) != 0 {
@@ -63,7 +63,7 @@ func TestJobsClaimsPermissionsAndResults(t *testing.T) {
 	request("POST", "/v1/jobs/"+job.ID+"/run", admin, "", 409)
 	nonce := strings.Repeat("1", 64)
 	claimBody := `{"request_id":"` + nonce + `"}`
-	s.path = "/dev/null/impossible"
+	s.path = impossibleStatePath(t)
 	request("POST", "/v1/machine/jobs/claim", machineA, claimBody, 500)
 	s.path = old
 	for _, run := range s.state.Runs {

@@ -34,7 +34,7 @@ func TestAdminRolesAndOwnGroups(t *testing.T) {
 	request("PATCH", "/v1/users/admin", "admin", `{"admin":false}`, 400)
 	request("PATCH", "/v1/users/admin", "admin", `{"admin":false,"disabled":false}`, 400)
 	oldPath := s.path
-	s.path = "/dev/null/impossible"
+	s.path = impossibleStatePath(t)
 	request("PATCH", "/v1/users/alice", "admin", `{"admin":true}`, 500)
 	s.path = oldPath
 	if s.state.Users["alice"].Admin {
