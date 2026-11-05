@@ -19,7 +19,7 @@ static std::wstring unpack(const UNICODE_STRING& field,const CREDENTIAL_PROVIDER
 int wmain(int argc,wchar_t** argv){
  if(argc<2||argc>3)return 2;
  HMODULE dll=LoadLibraryW(argv[1]);if(!dll){std::cerr<<"DLL load failed "<<GetLastError()<<"\n";return 3;}
- GetClass getClass=nullptr;CanUnload canUnload=nullptr;FARPROC first=GetProcAddress(dll,"DllGetClassObject"),second=GetProcAddress(dll,"DllCanUnloadNow");static_assert(sizeof(first)==sizeof(getClass));memcpy(&getClass,&first,sizeof(getClass));memcpy(&canUnload,&second,sizeof(canUnload));if(!getClass||!canUnload)return 4;
+ GetClass getClass=nullptr;CanUnload canUnload=nullptr;FARPROC getClassAddress=GetProcAddress(dll,"DllGetClassObject"),canUnloadAddress=GetProcAddress(dll,"DllCanUnloadNow");static_assert(sizeof(getClassAddress)==sizeof(getClass));memcpy(&getClass,&getClassAddress,sizeof(getClass));memcpy(&canUnload,&canUnloadAddress,sizeof(canUnload));if(!getClass||!canUnload)return 4;
  IClassFactory* factory=nullptr;ICredentialProvider* provider=nullptr;ICredentialProviderCredential* credential=nullptr;
  if(FAILED(getClass(CLSID_Linad,IID_IClassFactory,reinterpret_cast<void**>(&factory))))return 5;
  HRESULT hr=factory->CreateInstance(nullptr,IID_ICredentialProvider,reinterpret_cast<void**>(&provider));factory->Release();if(FAILED(hr))return 6;

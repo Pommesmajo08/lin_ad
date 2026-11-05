@@ -5,7 +5,7 @@ root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 cd "$root"
 mkdir -p dist
 if command -v x86_64-w64-mingw32-g++ >/dev/null 2>&1; then
- x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -shared -static native/windows-logon/provider.cpp -o dist/linad-credential-provider.dll -lole32 -luuid -lsecur32 -ladvapi32
+ x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -shared -static native/windows-logon/provider.cpp native/windows-logon/exports.def -o dist/linad-credential-provider.dll -lole32 -luuid -lsecur32 -ladvapi32
  x86_64-w64-mingw32-g++ -std=c++17 -O2 -Wall -Wextra -Werror -DUNICODE -D_UNICODE -static -municode native/windows-logon/probe.cpp -o dist/linad-logon-probe.exe -lole32 -luuid -lsecur32 -ladvapi32 -luserenv
 else
  command -v docker >/dev/null || { echo 'MinGW oder Docker erforderlich; alternativ auf Windows scripts/build-windows-logon.ps1 verwenden.' >&2; exit 1; }
