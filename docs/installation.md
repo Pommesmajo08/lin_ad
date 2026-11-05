@@ -103,6 +103,23 @@ Bestehende Compose-Dateien werden bei Updates beibehalten. Falls der Server bish
 
 Mit `--config-dir /ABSOLUTER/PFAD` ist ein anderer externer Konfigurationsordner möglich. `--no-start` legt nur die Konfiguration an. Der Installer verwendet ausdrücklich den lokalen Docker-Daemon unter `/var/run/docker.sock`; entfernte Docker-Kontexte werden nicht verwendet.
 
+## Speicherverbrauch und OOM-Diagnose
+
+Das Server-Image setzt standardmäßig `GOMEMLIMIT=512MiB`. Dies ist ein weiches Go-Speicherbudget: Es beeinflusst die Speicherbereinigung, begrenzt aber weder den gesamten Prozess-RSS noch die VM hart. Bei direkt gestarteten Servern kann derselbe Wert als Umgebungsvariable gesetzt werden. Ein expliziter Wert in Compose überschreibt den Image-Standard.
+
+Um bei einer VM mit ausreichend RAM einen einzelnen Container hart auf 1 GiB zu begrenzen, kann unter dem vorhandenen Dienst `directory` ergänzt werden (vorhandene Secrets, Volumes und Portfreigaben beibehalten):
+
+```yaml
+    mem_limit: 1g
+    environment:
+      LINAD_ADMIN_PASSWORD_FILE: /run/secrets/admin_password
+      GOMEMLIMIT: 512MiB
+```
+
+Danach `sudo docker compose -f /etc/linad-server/compose.yaml up -d` ausführen. Die harte Grenze kann bei tatsächlich höherem Speicherbedarf den Container beenden; sie schützt die übrige VM vor diesem Container. Bei großen Verzeichnissen beide Werte anpassen. `restart: unless-stopped` startet den Container anschließend neu.
+
+Für die Eingrenzung: `sudo docker stats --no-stream`, `free -h` und `sudo journalctl -k -b | tail -100` zeigen Containerverbrauch, VM-Speicher und mögliche OOM-Killer-Meldungen. `sudo docker inspect --format '{{.State.OOMKilled}}' CONTAINERNAME` zeigt, ob der aktuelle Containerzustand einen OOM-Abbruch meldet; nach automatischem Neustart kann diese Information bereits überschrieben sein. Hyper-V-Hostspeicher und dynamischer VM-Speicher müssen zusätzlich auf dem Host geprüft werden.
+
 ## 2. Ubuntu-/Debian-Gerät
 
 In der Webverwaltung unter **Geräte** ein Linux-Gerät registrieren und Anmeldezugriff für Benutzer/Gruppen vergeben. **Linux provisionieren** zeigt Geräte-ID und den einmaligen, 15 Minuten gültigen Enrollment-Token.

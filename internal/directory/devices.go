@@ -3,7 +3,6 @@ package directory
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"net/http"
 	"regexp"
 	"sort"
@@ -92,9 +91,7 @@ func (s *Server) devices(w http.ResponseWriter, r *http.Request, u User) {
 		fail(w, 403, "administrator required")
 		return
 	}
-	data, _ := json.Marshal(s.state)
-	var next State
-	_ = json.Unmarshal(data, &next)
+	next := copyJobState(s.state)
 	if next.Devices == nil {
 		next.Devices = map[string]Device{}
 	}

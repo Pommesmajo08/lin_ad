@@ -1,7 +1,6 @@
 package directory
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"sort"
@@ -50,18 +49,6 @@ type JobRun struct {
 
 func ValidJobKind(kind string) bool {
 	return kind == "system-info" || kind == "apt-refresh" || kind == "apt-upgrade" || kind == "windows-update" || kind == "custom-script"
-}
-func copyJobState(st State) State {
-	data, _ := json.Marshal(st)
-	var next State
-	_ = json.Unmarshal(data, &next)
-	if next.Jobs == nil {
-		next.Jobs = map[string]Job{}
-	}
-	if next.Runs == nil {
-		next.Runs = map[string]JobRun{}
-	}
-	return next
 }
 func publicRun(run JobRun) JobRun { run.ClaimHash = ""; return run }
 func jobActive(run JobRun) bool {

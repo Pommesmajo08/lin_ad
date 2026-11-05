@@ -2,7 +2,6 @@ package directory
 
 import (
 	"crypto/subtle"
-	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -30,9 +29,7 @@ func (s *Server) enroll(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, "enrollment failed")
 		return
 	}
-	data, _ := json.Marshal(s.state)
-	var next State
-	_ = json.Unmarshal(data, &next)
+	next := copyJobState(s.state)
 	d.CredentialHash = tokenKey(secret)
 	d.EnrollmentHash = ""
 	d.EnrollmentExpires = time.Time{}

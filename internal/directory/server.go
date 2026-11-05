@@ -273,9 +273,7 @@ func (s *Server) authorized(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Work on a copy: failed writes never mutate the in-memory committed directory.
-	data, _ := json.Marshal(s.state)
-	var next State
-	_ = json.Unmarshal(data, &next)
+	next := copyJobState(s.state)
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(parts) < 2 {
 		fail(w, 404, "not found")
@@ -515,9 +513,7 @@ func (s *Server) changePassword(w http.ResponseWriter, r *http.Request, u User) 
 		fail(w, 403, "current password is incorrect")
 		return
 	}
-	data, _ := json.Marshal(s.state)
-	var next State
-	_ = json.Unmarshal(data, &next)
+	next := copyJobState(s.state)
 	updated := passwordUser(u.Name, body.New, u.Admin)
 	updated.Disabled = u.Disabled
 	updated.UnixID = u.UnixID
