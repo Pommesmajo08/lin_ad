@@ -16,40 +16,45 @@ using GetClass=HRESULT (WINAPI*)(REFCLSID,REFIID,void**);
 using CanUnload=HRESULT (WINAPI*)();
 static bool privilege(const wchar_t* name){HANDLE token=nullptr;if(!OpenProcessToken(GetCurrentProcess(),TOKEN_ADJUST_PRIVILEGES|TOKEN_QUERY,&token))return false;TOKEN_PRIVILEGES p{};p.PrivilegeCount=1;p.Privileges[0].Attributes=SE_PRIVILEGE_ENABLED;bool ok=LookupPrivilegeValueW(nullptr,name,&p.Privileges[0].Luid)!=FALSE;if(ok){SetLastError(ERROR_SUCCESS);ok=AdjustTokenPrivileges(token,FALSE,&p,0,nullptr,nullptr)!=FALSE&&GetLastError()==ERROR_SUCCESS;}CloseHandle(token);return ok;}
 static std::wstring unpack(const UNICODE_STRING& field,const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION& serial){auto offset=reinterpret_cast<uintptr_t>(field.Buffer);if(offset>serial.cbSerialization||field.Length>serial.cbSerialization-offset||field.Length%sizeof(wchar_t))return {};return {reinterpret_cast<wchar_t*>(serial.rgbSerialization+offset),field.Length/sizeof(wchar_t)};}
+static int fail(int code,const char* stage){std::cerr<<"Native logon probe failed: stage="<<stage<<"; exit="<<code<<std::endl;return code;}
 int wmain(int argc,wchar_t** argv){
- if(argc<2||argc>3)return 2;
- HMODULE dll=LoadLibraryW(argv[1]);if(!dll){std::cerr<<"DLL load failed "<<GetLastError()<<"\n";return 3;}
- GetClass getClass=nullptr;CanUnload canUnload=nullptr;FARPROC getClassAddress=GetProcAddress(dll,"DllGetClassObject"),canUnloadAddress=GetProcAddress(dll,"DllCanUnloadNow");static_assert(sizeof(getClassAddress)==sizeof(getClass));memcpy(&getClass,&getClassAddress,sizeof(getClass));memcpy(&canUnload,&canUnloadAddress,sizeof(canUnload));if(!getClass||!canUnload)return 4;
+ if(argc<2||argc>3)return fail(2,"arguments");
+ HMODULE dll=LoadLibraryW(argv[1]);if(!dll){std::cerr<<"DLL load failed "<<GetLastError()<<"\n";return fail(3,"load-provider");}
+ GetClass getClass=nullptr;CanUnload canUnload=nullptr;FARPROC getClassAddress=GetProcAddress(dll,"DllGetClassObject"),canUnloadAddress=GetProcAddress(dll,"DllCanUnloadNow");static_assert(sizeof(getClassAddress)==sizeof(getClass));memcpy(&getClass,&getClassAddress,sizeof(getClass));memcpy(&canUnload,&canUnloadAddress,sizeof(canUnload));if(!getClass||!canUnload)return fail(4,"resolve-exports");
  IClassFactory* factory=nullptr;ICredentialProvider* provider=nullptr;ICredentialProviderCredential* credential=nullptr;
- if(FAILED(getClass(CLSID_Linad,IID_IClassFactory,reinterpret_cast<void**>(&factory))))return 5;
- HRESULT hr=factory->CreateInstance(nullptr,IID_ICredentialProvider,reinterpret_cast<void**>(&provider));factory->Release();if(FAILED(hr))return 6;
- if(FAILED(provider->SetUsageScenario(CPUS_LOGON,0)))return 7;
- DWORD count=0;if(FAILED(provider->GetFieldDescriptorCount(&count))||count!=5)return 8;
- for(DWORD i=0;i<count;i++){CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* field=nullptr;if(FAILED(provider->GetFieldDescriptorAt(i,&field))||field->dwFieldID!=i)return 9;CoTaskMemFree(field->pszLabel);CoTaskMemFree(field);}
- if(FAILED(provider->GetCredentialAt(0,&credential)))return 10;
+ if(FAILED(getClass(CLSID_Linad,IID_IClassFactory,reinterpret_cast<void**>(&factory))))return fail(5,"get-class-factory");
+ HRESULT hr=factory->CreateInstance(nullptr,IID_ICredentialProvider,reinterpret_cast<void**>(&provider));factory->Release();if(FAILED(hr))return fail(6,"create-provider");
+ if(FAILED(provider->SetUsageScenario(CPUS_LOGON,0)))return fail(7,"set-usage-scenario");
+ DWORD count=0;if(FAILED(provider->GetFieldDescriptorCount(&count))||count!=5)return fail(8,"field-count");
+ for(DWORD i=0;i<count;i++){CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* field=nullptr;if(FAILED(provider->GetFieldDescriptorAt(i,&field))||field->dwFieldID!=i)return fail(9,"field-descriptor");CoTaskMemFree(field->pszLabel);CoTaskMemFree(field);}
+ if(FAILED(provider->GetCredentialAt(0,&credential)))return fail(10,"get-credential");
+ std::cout<<"Native logon probe: COM ready"<<std::endl;
  if(argc==3){
-  HANDLE input=CreateFileW(argv[2],GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);if(input==INVALID_HANDLE_VALUE)return 11;
-  char data[1024]{};DWORD read=0;BOOL loaded=ReadFile(input,data,sizeof(data),&read,nullptr);CloseHandle(input);if(!loaded||read==sizeof(data))return 12;
-  std::string source(data,read);SecureZeroMemory(data,sizeof(data));auto split=source.find('\n');if(split==std::string::npos)return 13;
-  std::wstring name,password;if(!linad::wide(source.substr(0,split),name)||!linad::wide(source.substr(split+1),password))return 14;linad::wipe(source);
+  HANDLE input=CreateFileW(argv[2],GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);if(input==INVALID_HANDLE_VALUE)return fail(11,"open-credential-fixture");
+  char data[1024]{};DWORD read=0;BOOL loaded=ReadFile(input,data,sizeof(data),&read,nullptr);CloseHandle(input);if(!loaded||read==sizeof(data))return fail(12,"read-credential-fixture");
+  std::string source(data,read);SecureZeroMemory(data,sizeof(data));auto split=source.find('\n');if(split==std::string::npos)return fail(13,"parse-credential-fixture");
+  std::wstring name,password;if(!linad::wide(source.substr(0,split),name)||!linad::wide(source.substr(split+1),password))return fail(14,"decode-credential-fixture");linad::wipe(source);
   credential->SetStringValue(1,name.c_str());credential->SetStringValue(2,password.c_str());linad::wipe(password);
   CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE response{};CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION serial{};PWSTR text=nullptr;CREDENTIAL_PROVIDER_STATUS_ICON icon{};
   hr=credential->GetSerialization(&response,&serial,&text,&icon);if(text)CoTaskMemFree(text);
-  if(FAILED(hr)||response!=CPGSR_RETURN_CREDENTIAL_FINISHED||serial.cbSerialization<sizeof(KERB_INTERACTIVE_UNLOCK_LOGON))return 15;
+  if(FAILED(hr)||response!=CPGSR_RETURN_CREDENTIAL_FINISHED||serial.cbSerialization<sizeof(KERB_INTERACTIVE_UNLOCK_LOGON)){std::cerr<<"Serialization HRESULT="<<hr<<"; response="<<response<<"; bytes="<<serial.cbSerialization<<std::endl;return fail(15,"online-grant-serialization");}
+  std::cout<<"Native logon probe: online grant serialized"<<std::endl;
   auto logon=reinterpret_cast<KERB_INTERACTIVE_UNLOCK_LOGON*>(serial.rgbSerialization);
   auto login=unpack(logon->Logon.UserName,serial),domain=unpack(logon->Logon.LogonDomainName,serial),secret=unpack(logon->Logon.Password,serial);
-  if(login.empty()||domain.empty()||secret.empty())return 16;
+  if(login.empty()||domain.empty()||secret.empty())return fail(16,"unpack-serialization");
   HANDLE token=nullptr;
-  if(!LogonUserW(login.c_str(),domain.c_str(),secret.c_str(),LOGON32_LOGON_INTERACTIVE,LOGON32_PROVIDER_DEFAULT,&token)){std::cerr<<"SAM authentication failed "<<GetLastError()<<"\n";return 17;}
+  if(!LogonUserW(login.c_str(),domain.c_str(),secret.c_str(),LOGON32_LOGON_INTERACTIVE,LOGON32_PROVIDER_DEFAULT,&token)){std::cerr<<"SAM authentication failed "<<GetLastError()<<"\n";return fail(17,"sam-logon");}
   SecureZeroMemory(serial.rgbSerialization,serial.cbSerialization);CoTaskMemFree(serial.rgbSerialization);
+  std::cout<<"Native logon probe: SAM authenticated"<<std::endl;
   credential->ReportResult(0,0,&text,&icon);if(text)CoTaskMemFree(text);
-  HANDLE second=nullptr;if(LogonUserW(login.c_str(),domain.c_str(),secret.c_str(),LOGON32_LOGON_INTERACTIVE,LOGON32_PROVIDER_DEFAULT,&second)){CloseHandle(second);return 18;}linad::wipe(secret);
-  if(!privilege(SE_BACKUP_NAME)||!privilege(SE_RESTORE_NAME))return 19;
+  HANDLE second=nullptr;if(LogonUserW(login.c_str(),domain.c_str(),secret.c_str(),LOGON32_LOGON_INTERACTIVE,LOGON32_PROVIDER_DEFAULT,&second)){CloseHandle(second);return fail(18,"completed-grant-still-authenticates");}linad::wipe(secret);
+  std::cout<<"Native logon probe: completed grant rejected"<<std::endl;
+  if(!privilege(SE_BACKUP_NAME)||!privilege(SE_RESTORE_NAME))return fail(19,"enable-profile-privileges");
   PROFILEINFOW profile{};profile.dwSize=sizeof(profile);profile.dwFlags=PI_NOUI;profile.lpUserName=login.data();
-  if(!LoadUserProfileW(token,&profile)){std::cerr<<"Profile load failed "<<GetLastError()<<"\n";return 20;}
-  if(!UnloadUserProfile(token,profile.hProfile))return 21;
+  if(!LoadUserProfileW(token,&profile)){std::cerr<<"Profile load failed "<<GetLastError()<<"\n";return fail(20,"load-user-profile");}
+  if(!UnloadUserProfile(token,profile.hProfile)){std::cerr<<"Profile unload failed "<<GetLastError()<<std::endl;return fail(21,"unload-user-profile");}
   CloseHandle(token);
  }
- credential->Release();provider->Release();if(canUnload()!=S_OK)return 22;FreeLibrary(dll);
+ credential->Release();provider->Release();if(canUnload()!=S_OK)return fail(22,"provider-reference-cleanup");FreeLibrary(dll);
  std::cout<<"PASS: credential provider COM/serialization, online broker, local SAM and profile (when credentials supplied)\n";return 0;
 }

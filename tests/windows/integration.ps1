@@ -56,11 +56,14 @@ try {
     [IO.File]::WriteAllText($inputFile,('signin-user'+"`n"+$loginPassword),(New-Object Text.UTF8Encoding($false)))
     function Probe-Logon([bool]$Expected) {
         $quote={param($value) "'"+$value.Replace("'","''")+"'"}
-        $code='& '+(& $quote $probe)+' '+(& $quote $providerPath)+' '+(& $quote $inputFile)+'; if ($LASTEXITCODE) { exit $LASTEXITCODE }'
+        $code='$ErrorActionPreference="Continue"; & '+(& $quote $probe)+' '+(& $quote $providerPath)+' '+(& $quote $inputFile)+'; $probeExit=$LASTEXITCODE; $ErrorActionPreference="Stop"; Write-Output ("Native logon probe exit code: "+$probeExit); exit $probeExit'
         $test=Api 'POST' '/v1/jobs' @{name='Windows logon integration';kind='custom-script';interpreter='powershell';script=$code;device_ids=@($device.id)}
         $until=[DateTime]::UtcNow.AddSeconds(120)
         do{$attempts=@(Api 'GET' ('/v1/job-runs?job_id='+$test.id) $null);if($attempts.Count -and $attempts[0].status -in @('succeeded','failed')){break};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $until)
-        if($Expected -and ($attempts[0].status -ne 'succeeded' -or $attempts[0].output -notmatch 'PASS: credential provider')){throw ('Native Windows logon test failed: '+$attempts[0].output)}
+        if(-not $attempts.Count -or $attempts[0].status -notin @('succeeded','failed')){throw 'Native Windows logon probe did not reach a terminal job result within 120 seconds'}
+        $result=$attempts[0]
+        Write-Host ("Native logon result: status=$($result.status); exit_code=$($result.exit_code)`n$($result.output)")
+        if($Expected -and ($attempts[0].status -ne 'succeeded' -or $attempts[0].output -notmatch 'PASS: credential provider')){throw ('Native Windows logon test failed: status='+$result.status+'; exit_code='+$result.exit_code+'; '+$result.output)}
         if(-not $Expected -and ($attempts[0].status -ne 'failed' -or $attempts[0].exit_code -ne 15)){throw 'Revoked sign-in was not denied by the credential provider'}
     }
     Probe-Logon $true
