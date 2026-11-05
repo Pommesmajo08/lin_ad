@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 func privateTestDir(t *testing.T) string {
@@ -19,15 +20,26 @@ func privateTestDir(t *testing.T) string {
 	d := t.TempDir()
 	// TempDir can have explicit runner ACEs. Removing inheritance alone does
 	// not remove those; replace the descriptor just as the installer does.
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `
-$ErrorActionPreference='Stop'
-$acl=New-Object Security.AccessControl.DirectorySecurity
-$acl.SetSecurityDescriptorSddlForm('O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)')
-Set-Acl -LiteralPath $env:LINAD_TEST_PRIVATE_PATH -AclObject $acl
-`)
-	cmd.Env = append(os.Environ(), "LINAD_TEST_PRIVATE_PATH="+d)
-	if out, e := cmd.CombinedOutput(); e != nil {
-		t.Fatalf("ACL setup: %v %s", e, out)
+	sddl, e := syscall.UTF16PtrFromString("O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)")
+	if e != nil {
+		t.Fatal(e)
+	}
+	var sd uintptr
+	ok, _, e := advapi.NewProc("ConvertStringSecurityDescriptorToSecurityDescriptorW").Call(
+		uintptr(unsafe.Pointer(sddl)), 1, uintptr(unsafe.Pointer(&sd)), 0)
+	if ok == 0 {
+		t.Fatalf("parse test ACL: %v", e)
+	}
+	defer kernel.NewProc("LocalFree").Call(sd)
+	path, e := syscall.UTF16PtrFromString(d)
+	if e != nil {
+		t.Fatal(e)
+	}
+	// OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION |
+	// PROTECTED_DACL_SECURITY_INFORMATION: replace explicit and inherited ACEs.
+	ok, _, e = advapi.NewProc("SetFileSecurityW").Call(uintptr(unsafe.Pointer(path)), 0x80000005, sd)
+	if ok == 0 {
+		t.Fatalf("apply test ACL: %v", e)
 	}
 	if e := VerifyPrivate(d); e != nil {
 		t.Fatal(e)
