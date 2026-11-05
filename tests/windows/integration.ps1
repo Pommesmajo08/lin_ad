@@ -56,7 +56,7 @@ try {
     [IO.File]::WriteAllText($inputFile,('signin-user'+"`n"+$loginPassword),(New-Object Text.UTF8Encoding($false)))
     function Probe-Logon([bool]$Expected) {
         $quote={param($value) "'"+$value.Replace("'","''")+"'"}
-        $code='$ErrorActionPreference="Continue"; & '+(& $quote $probe)+' '+(& $quote $providerPath)+' '+(& $quote $inputFile)+'; $probeExit=$LASTEXITCODE; $ErrorActionPreference="Stop"; Write-Output ("Native logon probe exit code: "+$probeExit); exit $probeExit'
+        $code='$global:LASTEXITCODE=$null; $ErrorActionPreference="Continue"; & '+(& $quote $probe)+' '+(& $quote $providerPath)+' '+(& $quote $inputFile)+'; $probeExit=$LASTEXITCODE; $ErrorActionPreference="Stop"; if($null -eq $probeExit){throw "Native logon probe did not execute synchronously; LASTEXITCODE is unset"}; Write-Output ("Native logon probe exit code: "+$probeExit); exit $probeExit'
         $test=Api 'POST' '/v1/jobs' @{name='Windows logon integration';kind='custom-script';interpreter='powershell';script=$code;device_ids=@($device.id)}
         $until=[DateTime]::UtcNow.AddSeconds(120)
         do{$attempts=@(Api 'GET' ('/v1/job-runs?job_id='+$test.id) $null);if($attempts.Count -and $attempts[0].status -in @('succeeded','failed')){break};Start-Sleep -Milliseconds 200}while([DateTime]::UtcNow -lt $until)

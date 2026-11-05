@@ -112,6 +112,30 @@ func TestNativePowerShellAndIntegrity(t *testing.T) {
 		t.Fatal("script temporary files retained", e)
 	}
 }
+func TestNativeExecutableInvocationAndExitCode(t *testing.T) {
+	d := privateTestDir(t)
+	// The agent must supply its own native executable extensions, even when
+	// launched from an environment with an invalid PATHEXT.
+	t.Setenv("PATHEXT", ".INVALID")
+	_, source, hash, e := directory.NormalizeJobScript("powershell", `
+$global:LASTEXITCODE=$null
+& $env:ComSpec /d /c 'echo linad-native-executable-ok & exit /b 9'
+$nativeExit=$LASTEXITCODE
+if($null -eq $nativeExit){throw 'native executable was not invoked synchronously'}
+Write-Output "native-exit=$nativeExit"
+exit $nativeExit
+`)
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	code, out := Execute(ctx, directory.JobRun{Kind: "custom-script", Interpreter: "powershell", Script: source, ScriptSHA256: hash}, d)
+	if code != 9 || !strings.Contains(out, "linad-native-executable-ok") || !strings.Contains(out, "native-exit=9") {
+		t.Fatalf("native invocation/output/exit code failed: %d %s", code, out)
+	}
+}
+
 func TestNativeTimeoutKillsProcessTree(t *testing.T) {
 	d := privateTestDir(t)
 	_, source, hash, _ := directory.NormalizeJobScript("powershell", `$info=New-Object Diagnostics.ProcessStartInfo

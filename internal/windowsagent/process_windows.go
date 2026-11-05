@@ -72,6 +72,8 @@ func powerShellEnvironment(dir string, run directory.JobRun) []string {
 	return append(env,
 		"PATH="+filepath.Join(root, "System32")+";"+root+";"+home,
 		"ComSpec="+filepath.Join(root, "System32", "cmd.exe"),
+		// PowerShell uses PATHEXT even for an explicitly named .exe.
+		"PATHEXT=.COM;.EXE;.BAT;.CMD",
 		"PSModulePath="+modules,
 		"TEMP="+dir, "TMP="+dir,
 		"LINAD_DEVICE_ID="+run.DeviceID, "LINAD_JOB_ID="+run.JobID, "LINAD_RUN_ID="+run.ID)
