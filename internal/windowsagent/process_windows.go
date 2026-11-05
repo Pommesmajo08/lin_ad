@@ -50,6 +50,54 @@ type extendedLimits struct {
 	ProcessMemory, JobMemory, PeakProcessMemory, PeakJobMemory uintptr
 }
 
+// Resume the initial CREATE_SUSPENDED thread with the documented Win32 API,
+// checking its suspend count instead of relying on process-wide NT resumption.
+func resumeInitialThread(pid uint32) error {
+	snapshot, _, e := kernel.NewProc("CreateToolhelp32Snapshot").Call(0x4, 0) // TH32CS_SNAPTHREAD
+	if snapshot == ^uintptr(0) {
+		return fmt.Errorf("snapshot suspended thread: %w", e)
+	}
+	defer syscall.CloseHandle(syscall.Handle(snapshot))
+	type threadEntry struct {
+		Size, Usage, ID, Owner      uint32
+		BasePriority, DeltaPriority int32
+		Flags                       uint32
+	}
+	entry := threadEntry{}
+	entry.Size = uint32(unsafe.Sizeof(entry))
+	ok, _, e := kernel.NewProc("Thread32First").Call(snapshot, uintptr(unsafe.Pointer(&entry)))
+	var threadID uint32
+	for ok != 0 {
+		if entry.Owner == pid {
+			if threadID != 0 {
+				return errors.New("suspended process has multiple threads before startup")
+			}
+			threadID = entry.ID
+		}
+		entry.Size = uint32(unsafe.Sizeof(entry))
+		ok, _, e = kernel.NewProc("Thread32Next").Call(snapshot, uintptr(unsafe.Pointer(&entry)))
+	}
+	if e != syscall.Errno(18) { // ERROR_NO_MORE_FILES
+		return fmt.Errorf("enumerate suspended thread: %w", e)
+	}
+	if threadID == 0 {
+		return errors.New("initial suspended thread not found")
+	}
+	thread, _, e := kernel.NewProc("OpenThread").Call(0x2, 0, uintptr(threadID)) // THREAD_SUSPEND_RESUME
+	if thread == 0 {
+		return fmt.Errorf("open suspended thread: %w", e)
+	}
+	defer syscall.CloseHandle(syscall.Handle(thread))
+	previous, _, e := kernel.NewProc("ResumeThread").Call(thread)
+	if previous == 0xffffffff {
+		return fmt.Errorf("resume initial thread: %w", e)
+	}
+	if previous != 1 {
+		return fmt.Errorf("unexpected initial thread suspend count: %d", previous)
+	}
+	return nil
+}
+
 // Suspended start prevents descendants escaping before assignment to the kill-on-close job.
 func runPowerShell(ctx context.Context, path, dir string, run directory.JobRun, out *LimitedLog) error {
 	h, _, e := kernel.NewProc("CreateJobObjectW").Call(0, 0)
@@ -89,12 +137,13 @@ func runPowerShell(ctx context.Context, path, dir string, run directory.JobRun, 
 		_ = cmd.Wait()
 		return e
 	}
-	status, _, _ := syscall.NewLazyDLL("ntdll.dll").NewProc("NtResumeProcess").Call(uintptr(process))
-	if status != 0 {
+	if e = resumeInitialThread(uint32(cmd.Process.Pid)); e != nil {
 		closeJob()
 		_ = cmd.Wait()
-		return fmt.Errorf("resume process: NTSTATUS %#x", status)
+		return e
 	}
+
+	fmt.Fprintf(out, "PowerShell process %d: initial thread resumed after job assignment\n", cmd.Process.Pid)
 	e = cmd.Wait()
 	if ctx.Err() != nil {
 		return ctx.Err()
