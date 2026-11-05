@@ -58,6 +58,8 @@ Zusätzlich zur Windows-GUI gibt es einen eigenen **Windows-Geräteagenten** fü
 
 Alternativ `install-agent-windows.cmd` aus dem Release **als Administrator** starten. Der Agent unterstützt Inventar, Windows-Updates und eigene PowerShell-Jobs. Updates verwenden den vorhandenen Geräteschlüssel. Details zu Einrichtung, TLS, Dienst und Wiederherstellung: [Windows-Geräteagent](windows-agent.md).
 
+Für die Windows-Nutzeranmeldung zusätzlich `-EnableLogon` verwenden. Die [Windows-Anmeldeanleitung](windows-logon.md) beschreibt Aktivierung, Gerätefreigaben, Tests und Wiederherstellung.
+
 ## Welches Paket brauche ich?
 
 | Ziel | Paket | Start |

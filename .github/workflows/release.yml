@@ -15,6 +15,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
+    needs: windows
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -31,6 +32,10 @@ jobs:
           [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
           git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"
           test "$(git rev-parse HEAD)" = "$(git rev-parse "$RELEASE_TAG^{commit}")"
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-logon-dll
+          path: dist
       - name: Go checks and packages
         run: |
           go test -race ./...
@@ -59,6 +64,9 @@ jobs:
         with:
           go-version: '1.27.x'
           cache: false
+      - name: Build Windows logon component with Windows SDK
+        shell: pwsh
+        run: '& ./scripts/build-windows-logon.ps1'
       - name: Build and test Windows installer
         shell: pwsh
         run: |
@@ -84,6 +92,11 @@ jobs:
           go build -o dist/linad-server-windows-test.exe ./cmd/server
           if ($LASTEXITCODE) { throw 'Test server build failed' }
           & ./tests/windows/integration.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-logon-dll
+          path: dist/linad-credential-provider.dll
+          if-no-files-found: error
   publish:
     needs: [build, windows]
     runs-on: ubuntu-24.04

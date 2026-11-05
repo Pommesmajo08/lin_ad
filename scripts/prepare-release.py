@@ -2,6 +2,7 @@
 import hashlib
 from pathlib import Path
 import shutil
+from zipfile import ZipFile
 root=Path(__file__).resolve().parents[1]
 output=root/'release'
 output.mkdir(exist_ok=True)
@@ -22,6 +23,9 @@ assets={
 for source in assets.values():
     if not (root/source).is_file():
         raise SystemExit('Missing release input: '+source+'; build and export the tested server image first.')
+with ZipFile(root/'dist/linad-windows-agent-amd64.zip') as archive:
+    if 'dist/linad-credential-provider.dll' not in archive.namelist():
+        raise SystemExit('Windows logon DLL missing from agent package; run scripts/build-windows-logon.ps1 first.')
 for target,source in assets.items():
     shutil.copyfile(root/source,output/target)
 with (output/'SHA256SUMS').open('w') as sums:

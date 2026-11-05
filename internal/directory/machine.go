@@ -72,6 +72,10 @@ func (s *Server) machine(w http.ResponseWriter, r *http.Request) {
 		reply(w, 200, map[string]string{"device_id": d.ID, "os": d.OS})
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/v1/machine/windows/") {
+		s.windowsLogon(w, r, d)
+		return
+	}
 	if d.OS != "linux" {
 		fail(w, 403, "Windows agents only support device jobs")
 		return

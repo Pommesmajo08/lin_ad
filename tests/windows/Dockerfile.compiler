@@ -1,0 +1,7 @@
+FROM debian:bookworm-slim
+RUN --mount=type=secret,id=proxy_ca \
+    set -eu; set --; \
+    if [ -f /run/secrets/proxy_ca ]; then set -- -o Acquire::https::CaInfo=/run/secrets/proxy_ca; fi; \
+    apt-get "$@" update; \
+    apt-get "$@" install -y --no-install-recommends g++-mingw-w64-x86-64-posix; \
+    rm -rf /var/lib/apt/lists/*

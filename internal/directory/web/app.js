@@ -32,7 +32,7 @@ $('theme').addEventListener('change', () => {
   applyTheme();
 });
 systemTheme.addEventListener('change', applyTheme);
-function hideEnrollment() { $('enrollment-command').value = ''; $('enrollment-token').value = ''; $('enrollment-panel').hidden = true; }
+function hideEnrollment() { $('windows-logon-option').hidden = true; $('enable-windows-logon').checked = false; $('enable-windows-logon').onchange = null; $('enrollment-command').value = ''; $('enrollment-token').value = ''; $('enrollment-panel').hidden = true; }
 $('close-enrollment').addEventListener('click', hideEnrollment);
 function message(text, error = false) {
   $('message').textContent = text;
@@ -141,7 +141,7 @@ async function refresh() {
   $('welcome').textContent = profile.admin ? 'Verzeichnisübersicht' : `Hallo, ${profile.name}.`;
   $('admin-panel').hidden = !profile.admin;
   $('device-form').hidden = !profile.admin;
-  $('linux-login').textContent = `Linux-Login: ${profile.linux_name || 'noch nicht zugewiesen'}`;
+  $('linux-login').textContent = `Linux: ${profile.linux_name || 'noch nicht zugewiesen'} · Windows-Konto: linad_${profile.unix_id} · Linad-Benutzername: ${profile.name}`;
   $('workspace').hidden = false; $('session').hidden = false; $('login-panel').hidden = true;
   const ownGroups = await api('GET', '/v1/me/groups');
   $('my-groups').replaceChildren();
@@ -175,7 +175,7 @@ async function refresh() {
   $('users').replaceChildren(); $('reset-user').replaceChildren();
   users.forEach(user => {
     const row = element('tr');
-    row.append(element('td', user.name), element('td', user.linux_name), element('td', user.admin ? 'Administrator' : 'Benutzer'));
+    row.append(element('td', user.name), element('td', `${user.linux_name} / linad_${user.unix_id}`), element('td', user.admin ? 'Administrator' : 'Benutzer'));
     const status = element('td'); status.append(element('span', user.disabled ? 'Gesperrt' : 'Aktiv', user.disabled ? 'badge disabled' : 'badge')); row.append(status);
     const controls = element('td');
     if (user.name !== 'admin') {
@@ -287,7 +287,7 @@ function renderDevicePolicies(devices, users, groups) {
   const area = $('device-policies'); area.replaceChildren(); area.hidden = false;
   devices.forEach(device => {
     const card = element('section', undefined, 'card device-policy');
-    card.append(element('h2', `${device.os === 'windows' ? 'Geräteverwaltung' : 'Anmeldezugriff'} · ${device.name}`));
+    card.append(element('h2', `Anmeldezugriff · ${device.name}`));
     const state = device.provisioned ? 'Geräte-Schlüssel aktiv' : 'Noch nicht provisioniert';
     card.append(element('p', `${state} · ID ${device.id}`, 'muted fine'));
     const form = element('form', undefined, 'policy-form');
@@ -299,7 +299,7 @@ function renderDevicePolicies(devices, users, groups) {
       values.forEach(([name, text]) => { const option = element('option', text); option.value = name; option.selected = selected.includes(name); select.append(option); });
       label.append(select); form.append(label); return select;
     }
-    const userSelect = selection('Einzelne Benutzer', users.map(user => [user.name, `${user.name}${user.disabled ? ' (gesperrt)' : ''} → ${user.linux_name}`]), device.allowed_users || []);
+    const userSelect = selection('Einzelne Benutzer', users.map(user => [user.name, `${user.name}${user.disabled ? ' (gesperrt)' : ''} → ${device.os === 'windows' ? 'linad_' + user.unix_id : user.linux_name}`]), device.allowed_users || []);
     const groupSelect = selection('Gruppen', Object.keys(groups).sort().map(name => [name, name]), device.allowed_groups || []);
     const save = element('button', 'Anmeldezugriff speichern'); save.type = 'submit'; form.append(save);
     form.addEventListener('submit', event => {
@@ -309,8 +309,8 @@ function renderDevicePolicies(devices, users, groups) {
         allowed_groups: [...groupSelect.selectedOptions].map(option => option.value)
       }, 'Anmeldezugriff gespeichert.'));
     });
-    if (device.os === 'linux') card.append(form, element('p', 'Mehrfachauswahl mit Strg/Cmd. Ohne Freigabe darf sich niemand anmelden. Gesperrte Konten bleiben immer ausgeschlossen.', 'muted fine'));
-    if (device.os === 'windows') card.append(element('p', 'Windows-Agent: Inventar, Updates und PowerShell-Jobs. Windows-Anmeldung und lokale Benutzerkonten werden nicht durch diese Freigaben verwaltet.', 'muted fine'));
+    card.append(form, element('p', 'Mehrfachauswahl mit Strg/Cmd. Ohne Freigabe darf sich niemand anmelden. Gesperrte Konten bleiben immer ausgeschlossen.', 'muted fine'));
+    if (device.os === 'windows') card.append(element('p', 'Windows: Für die Linad-Anmeldung die zusätzliche Anmeldekomponente mit -EnableLogon aktivieren. Freigaben gelten für neue Linad-Anmeldungen; bereits laufende Sitzungen werden nicht beendet.', 'muted fine'));
     {
       const actions = element('div', undefined, 'policy-actions');
       actions.append(button(device.os === 'windows' ? 'Windows-Agent einrichten' : 'Linux provisionieren', async () => {
@@ -320,9 +320,13 @@ function renderDevicePolicies(devices, users, groups) {
         $('enrollment-device').textContent = `${device.name} · Geräte-ID: ${device.id}`;
         const server = localSecret ? $('server-address').textContent : location.origin;
         const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
+        $('windows-logon-option').hidden = device.os !== 'windows';
+        $('enable-windows-logon').checked = false;
+        $('enable-windows-logon').onchange = null;
         if (device.os === 'windows') {
           const psQuote = value => "'" + value.replaceAll("'", "''") + "'";
-          $('enrollment-command').value = `.\\install-agent-windows.cmd -Server ${psQuote(server)} -DeviceID ${psQuote(device.id)}${server.startsWith('http:') ? ' -AllowHttp' : ''}`;
+          const updateCommand = () => { $('enrollment-command').value = `.\\install-agent-windows.cmd -Server ${psQuote(server)} -DeviceID ${psQuote(device.id)}${server.startsWith('http:') ? ' -AllowHttp' : ''}${$('enable-windows-logon').checked ? ' -EnableLogon' : ''}`; };
+          $('enable-windows-logon').onchange = updateCommand; updateCommand();
         } else { $('enrollment-command').value = `sudo --preserve-env=GH_TOKEN sh install.sh device -- --server ${quote(server)} --device-id ${quote(device.id)}${server.startsWith('http:') ? ' --allow-http' : ''}`; }
         $('enrollment-token').value = enrollment.enrollment_token;
         $('enrollment-expiry').textContent = `Gültig bis ${new Date(enrollment.expires_at).toLocaleString()}`;

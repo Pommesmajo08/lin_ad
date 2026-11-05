@@ -11,6 +11,8 @@ param(
     [switch]$NoStart,
     [switch]$Check,
     [switch]$Reenroll,
+    [switch]$EnableLogon,
+    [switch]$DisableLogon,
     [switch]$Uninstall
 )
 $ErrorActionPreference = 'Stop'
@@ -71,7 +73,7 @@ try {
     Write-Host 'Prüfsumme stimmt. Paket entpacken ...'
     Expand-Archive -LiteralPath (Join-Path $work $package) -DestinationPath (Join-Path $work 'package')
     if ($Component -eq 'device') {
-        $options = @{ InstallDir=$InstallDir; AllowHttp=$AllowHttp; NoStart=$NoStart; Check=$Check; Reenroll=$Reenroll; Uninstall=$Uninstall }
+        $options = @{ InstallDir=$InstallDir; AllowHttp=$AllowHttp; NoStart=$NoStart; Check=$Check; Reenroll=$Reenroll; EnableLogon=$EnableLogon; DisableLogon=$DisableLogon; Uninstall=$Uninstall }
         if ($Server) { $options.Server=$Server }; if ($DeviceID) { $options.DeviceID=$DeviceID }; if ($CaFile) { $options.CaFile=$CaFile }
         & (Join-Path $work 'package\scripts\install-windows-agent.ps1') @options
     } else { & (Join-Path $work 'package\scripts\install-client.ps1') -InstallDir $InstallDir -Uninstall:$Uninstall }

@@ -26,13 +26,16 @@ with tempfile.TemporaryDirectory() as tmp:
             page.goto(base)
             page.locator('#login-form [name=name]').fill('admin');page.locator('#login-form [name=password]').fill(password)
             page.get_by_role('button',name='Anmelden',exact=True).click();page.get_by_text('Erfolgreich angemeldet.',exact=True).wait_for()
-            card=page.locator('.device-policy').filter(has=page.get_by_role('heading',name='Geräteverwaltung · windows-pc',exact=True))
-            expect(card.locator('.policy-form')).to_have_count(0)
+            card=page.locator('.device-policy').filter(has=page.get_by_role('heading',name='Anmeldezugriff · windows-pc',exact=True))
+            expect(card.locator('.policy-form')).to_have_count(1)
             card.get_by_role('button',name='Windows-Agent einrichten',exact=True).click()
             page.locator('#enrollment-panel').wait_for(state='visible')
             command=page.locator('#enrollment-command').input_value()
             assert 'install-agent-windows.cmd' in command and win['id'] in command and '-AllowHttp' in command,command
             assert page.locator('#enrollment-token').input_value() not in command
+            page.locator('#enable-windows-logon').check()
+            expect(page.locator('#enrollment-command')).to_have_value(__import__('re').compile(r'-EnableLogon$'))
+            page.locator('#enable-windows-logon').uncheck()
             expect(page.locator('#enrollment-download')).to_have_attribute('href',__import__('re').compile(r'/install-agent-windows\.cmd$'))
             page.get_by_role('button',name='Token verbergen',exact=True).click()
             page.locator('[data-view=automation]').click();page.locator('#job-create > summary').click()
@@ -58,6 +61,6 @@ with tempfile.TemporaryDirectory() as tmp:
             assert any(j['kind']=='windows-update' for j in api('GET','/v1/jobs'))
             assert not errors,errors
             browser.close()
-        print('PASS: Windows enrollment/download command, no misleading login ACLs, OS filtering, PowerShell create/edit, Windows update assignment')
+        print('PASS: Windows enrollment/download command, Windows login ACLs/activation, OS filtering, PowerShell create/edit, Windows update assignment')
     finally:
         server.terminate();server.wait(timeout=10)

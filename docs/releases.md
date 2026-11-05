@@ -1,6 +1,6 @@
 # GitHub Releases bauen
 
-Die Workflow-Datei `.github/workflows/release.yml` startet beim Push eines Versionstags `vMAJOR.MINOR.PATCH` oder manuell mit einem bereits vorhandenen Tag. Alle Pakete werden aus genau diesem Tag gebaut. Linux/Go-Tests, Installer-Downloadtests, Debian-PAM-Integration, Server-Containerprüfung und der native Windows-Installer-Test müssen erfolgreich sein, bevor veröffentlicht wird.
+Die Workflow-Datei `.github/workflows/release.yml` startet beim Push eines Versionstags `vMAJOR.MINOR.PATCH` oder manuell mit einem bereits vorhandenen Tag. Alle Pakete werden aus genau diesem Tag gebaut. Die Windows-Stufe baut die Credential-Provider-DLL mit dem Windows SDK und prüft Broker/SAM/Profile; erst danach verpackt die Linux-Stufe diese geprüfte DLL. Linux/Go-Tests, Installer-Downloadtests, Debian-PAM-Integration, Server-Containerprüfung und der native Windows-Installer-Test müssen erfolgreich sein, bevor veröffentlicht wird.
 
 ```sh
 git tag v0.1.0
@@ -23,6 +23,7 @@ Assets:
 Lokale Vorbereitung ohne Veröffentlichung:
 
 ```sh
+sh scripts/build-windows-logon.sh
 sh scripts/build.sh
 python3 scripts/test-release-bootstrap.py
 python3 scripts/test-container.py --export-image

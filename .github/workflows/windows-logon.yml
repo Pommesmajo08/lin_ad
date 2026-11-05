@@ -1,0 +1,38 @@
+name: Windows logon checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-logon-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-logon:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.x'
+          cache: false
+      - name: Build and smoke-test credential provider against Windows SDK
+        shell: pwsh
+        run: '& ./scripts/build-windows-logon.ps1'
+      - name: Test protocol, local processes and Windows directory API
+        shell: pwsh
+        run: |
+          go test ./internal/windowsagent ./internal/directory
+          if ($LASTEXITCODE) { throw 'Windows unit tests failed' }
+          go vet ./internal/windowsagent ./cmd/windows-agent
+          if ($LASTEXITCODE) { throw 'Windows vet failed' }
+          go build -o dist/linad-windows-agent-amd64.exe ./cmd/windows-agent
+          if ($LASTEXITCODE) { throw 'Agent build failed' }
+          go build -o dist/linad-server-windows-test.exe ./cmd/server
+          if ($LASTEXITCODE) { throw 'Test server build failed' }
+          & ./tests/windows/integration.ps1

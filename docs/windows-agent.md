@@ -2,7 +2,7 @@
 
 Der Agent für Windows 10/11 und Windows Server (AMD64) bindet Geräte an die zentrale Jobverwaltung an. Er läuft als automatischer Windows-Dienst **LinadAgent** unter **LocalSystem**, ohne angemeldeten Benutzer. Der Server muss diese Agent-Version unterstützen; zuerst den Server aktualisieren.
 
-Unterstützt werden Inventarabfragen (`system-info`), geplante oder sofortige Windows-Updates (`windows-update`) sowie eigene PowerShell-Skripte (`custom-script`, Interpreter `powershell`). Benutzeranmeldung, Windows-Domänenbeitritt, lokale Kontensynchronisierung und Desktop-Fernsteuerung/RDP sind keine Bestandteile dieses Agenten. Die vorhandenen Windows-GUI/CLI-Clients bleiben die Verwaltungsoberfläche; für Gerätejobs wird zusätzlich dieser Agent installiert.
+Unterstützt werden Inventarabfragen (`system-info`), geplante oder sofortige Windows-Updates (`windows-update`) sowie eigene PowerShell-Skripte (`custom-script`, Interpreter `powershell`). Über die zusätzliche [Windows-Anmeldekomponente](windows-logon.md) sind Online-Anmeldung und verwaltete lokale Profile verfügbar (`-EnableLogon`). Windows-Domänenbeitritt und Desktop-Fernsteuerung/RDP sind weiterhin nicht enthalten. Die vorhandenen Windows-GUI/CLI-Clients bleiben die Verwaltungsoberfläche; für Gerätejobs wird zusätzlich dieser Agent installiert.
 
 ## Einrichtung
 

@@ -30,6 +30,11 @@ PYZIP
 python3 - <<'PYAGENT'
 from zipfile import ZipFile, ZIP_DEFLATED
 with ZipFile('dist/linad-windows-agent-amd64.zip', 'w', ZIP_DEFLATED) as archive:
-    for name in ['dist/linad-windows-agent-amd64.exe', 'scripts/install-windows-agent.ps1', 'docs/windows-agent.md']:
+    for name in ['dist/linad-windows-agent-amd64.exe', 'scripts/install-windows-agent.ps1', 'scripts/recover-windows-logon.ps1', 'docs/windows-agent.md', 'docs/windows-logon.md']:
         archive.write(name)
+    from pathlib import Path
+    if Path('dist/linad-credential-provider.dll').is_file():
+        archive.write('dist/linad-credential-provider.dll')
+    else:
+        print('Note: Windows logon DLL not built; -EnableLogon unavailable in this local package.')
 PYAGENT

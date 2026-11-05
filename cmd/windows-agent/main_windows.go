@@ -46,7 +46,7 @@ func token() (string, error) {
 }
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("commands: enroll, check-connection, doctor, once, run, service")
+		return errors.New("commands: enroll, check-connection, doctor, disable-logon, once, run, service")
 	}
 	mode := os.Args[1]
 	f := flag.NewFlagSet(mode, flag.ContinueOnError)
@@ -77,6 +77,14 @@ func run() error {
 	}
 	if e := windowsagent.VerifyPrivate(*dir); e != nil {
 		return e
+	}
+	if mode == "disable-logon" {
+		unlock, e := windowsagent.SingleInstance()
+		if e != nil {
+			return e
+		}
+		defer unlock()
+		return windowsagent.DisableManagedAccounts(*dir)
 	}
 	config := filepath.Join(*dir, "client.json")
 	journal := filepath.Join(*dir, "jobs.json")
@@ -128,7 +136,7 @@ func run() error {
 	if e != nil {
 		return e
 	}
-	if mode == "doctor" {
+	if mode == "doctor" || mode == "check-logon" {
 		if e = c.Health(ctx); e != nil {
 			return e
 		}
@@ -140,6 +148,17 @@ func run() error {
 		}
 		if identity.OS != "windows" {
 			return errors.New("credential belongs to a non-Windows device")
+		}
+		if mode == "check-logon" {
+			var accounts []directory.WindowsAccount
+			if e = c.Request(ctx, "GET", "/v1/machine/windows/users", nil, &accounts, true); e != nil {
+				return e
+			}
+			manager := &windowsagent.LogonManager{Client: c, Dir: *dir, Backend: windowsagent.NativeAccounts{}}
+			if e = manager.Check(accounts); e != nil {
+				return e
+			}
+			fmt.Printf("Windows-Anmelde-API bereit; freigegebene Konten: %d\n", len(accounts))
 		}
 		fmt.Printf("OK: Server %s; Windows-Gerät %s; geschützte Konfiguration.\n", c.Config.Server, c.Config.DeviceID)
 		return nil
@@ -160,10 +179,10 @@ func run() error {
 		_, e = windowsagent.Once(context.Background(), c, journal, execute)
 		return e
 	case "run":
-		windowsagent.Run(context.Background(), c, journal, execute)
+		windowsagent.RunDevice(context.Background(), c, journal, *dir, execute)
 		return nil
 	case "service":
-		return windowsagent.Serve(func(ctx context.Context) { windowsagent.Run(ctx, c, journal, execute) })
+		return windowsagent.Serve(func(ctx context.Context) { windowsagent.RunDevice(ctx, c, journal, *dir, execute) })
 	default:
 		return errors.New("unknown command")
 	}
