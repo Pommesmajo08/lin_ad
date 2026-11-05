@@ -256,7 +256,7 @@ onForm('device-form', async (data, form) => {
   await api('POST', '/v1/devices', data); form.reset(); await refresh(); message('Gerät registriert.');
 });
 onForm('connection-form', async (data) => {
-  await api('POST', '/client/connect', { server: data.server, allow_http: data.allow_http === 'on' });
+  await api('POST', '/client/connect', { server: data.server });
   guiConnected = true; signedOut();
   $('connection-panel').hidden = true;
   $('server-address').textContent = data.server;
@@ -325,9 +325,9 @@ function renderDevicePolicies(devices, users, groups) {
         $('enable-windows-logon').onchange = null;
         if (device.os === 'windows') {
           const psQuote = value => "'" + value.replaceAll("'", "''") + "'";
-          const updateCommand = () => { $('enrollment-command').value = `.\\install-agent-windows.cmd -Server ${psQuote(server)} -DeviceID ${psQuote(device.id)}${server.startsWith('http:') ? ' -AllowHttp' : ''}${$('enable-windows-logon').checked ? ' -EnableLogon' : ''}`; };
+          const updateCommand = () => { $('enrollment-command').value = `.\\install-agent-windows.cmd -Server ${psQuote(server)} -DeviceID ${psQuote(device.id)}${$('enable-windows-logon').checked ? ' -EnableLogon' : ''}`; };
           $('enable-windows-logon').onchange = updateCommand; updateCommand();
-        } else { $('enrollment-command').value = `sudo --preserve-env=GH_TOKEN sh install.sh device -- --server ${quote(server)} --device-id ${quote(device.id)}${server.startsWith('http:') ? ' --allow-http' : ''}`; }
+        } else { $('enrollment-command').value = `sudo --preserve-env=GH_TOKEN sh install.sh device -- --server ${quote(server)} --device-id ${quote(device.id)}`; }
         $('enrollment-token').value = enrollment.enrollment_token;
         $('enrollment-expiry').textContent = `Gültig bis ${new Date(enrollment.expires_at).toLocaleString()}`;
         $('enrollment-panel').hidden = false; $('enrollment-panel').scrollIntoView({ behavior: 'smooth', block: 'center' });

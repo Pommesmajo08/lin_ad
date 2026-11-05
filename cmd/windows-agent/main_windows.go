@@ -55,7 +55,7 @@ func run() error {
 	device := f.String("device-id", "", "Windows device ID")
 	ca := f.String("ca-file", "", "optional additional CA PEM file")
 	replace := f.Bool("replace", false, "rotate credential for the same device/server")
-	http := f.Bool("allow-http", false, "explicitly allow unencrypted HTTP")
+	http := f.Bool("allow-http", true, "deprecated: HTTP is allowed by default")
 	if e := f.Parse(os.Args[2:]); e != nil {
 		return e
 	}

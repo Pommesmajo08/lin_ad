@@ -84,13 +84,13 @@ sudo sh scripts/install-server.sh
 
 Der Installer lädt das mitgelieferte Server-Image und startet den Server. Konfiguration und zufälliges Bootstrap-Passwort liegen unter `/etc/linad-server`, außerhalb des Repositorys. Die Secret-Datei ist nur für Root und die Container-UID lesbar; die Compose-Datei verweist direkt auf sie. `LINAD_ADMIN_SECRET_FILE` muss für diesen Installationsweg nicht gesetzt werden.
 
-Lokal `http://127.0.0.1:8080` öffnen. Benutzername: `admin`. Das Passwort auf dem Docker-Host anzeigen:
+Im Netzwerk `http://SERVER-IP:8080` oder lokal `http://127.0.0.1:8080` öffnen. Benutzername: `admin`. Das Passwort auf dem Docker-Host anzeigen:
 
 ```sh
 sudo cat /etc/linad-server/admin-password
 ```
 
-Danach im eigenen Konto ändern. Das Bootstrap-Secret setzt bei späteren Starts **kein vorhandenes Passwort zurück**. Vor der Anbindung entfernter Geräte HTTPS über einen eigenen Reverse-Proxy einrichten.
+Danach im eigenen Konto ändern. Das Bootstrap-Secret setzt bei späteren Starts **kein vorhandenes Passwort zurück**. Entfernte Geräte können direkt `http://SERVER-IP:8080` verwenden. HTTPS kann über einen Reverse-Proxy ergänzt werden.
 
 ```sh
 sudo docker compose -f /etc/linad-server/compose.yaml ps
@@ -98,6 +98,8 @@ sudo docker compose -f /etc/linad-server/compose.yaml logs --tail 100
 ```
 
 Für Updates das neue Paket entpacken und denselben Installer erneut ausführen. Passwortdatei und Compose-Anpassungen bleiben erhalten. Das Volume `lin_ad_directory-data` enthält die Datenbank; regelmäßig sichern. Der Installer verwendet den Compose-Projektnamen `lin_ad`, passend zum Standard-Checkout. Bei einer bisherigen Installation mit **anderem Projektnamen, anderen Volumes oder Ports** die bestehende Compose-Installation weiterverwenden und nur das neue Image laden; es erfolgt keine automatische Datenmigration. Keine parallelen Server auf derselben Datenbank starten.
+
+Bestehende Compose-Dateien werden bei Updates beibehalten. Falls der Server bisher nur lokal erreichbar war, in `/etc/linad-server/compose.yaml` die Portfreigabe `127.0.0.1:8080:8080` durch `8080:8080` ersetzen und `sudo docker compose -f /etc/linad-server/compose.yaml up -d` ausführen.
 
 Mit `--config-dir /ABSOLUTER/PFAD` ist ein anderer externer Konfigurationsordner möglich. `--no-start` legt nur die Konfiguration an. Der Installer verwendet ausdrücklich den lokalen Docker-Daemon unter `/var/run/docker.sock`; entfernte Docker-Kontexte werden nicht verwendet.
 
@@ -119,7 +121,7 @@ sudo sh scripts/install-linux.sh --server https://directory.example --device-id 
 sudo sh scripts/install-linux.sh --server https://directory.example --device-id DEVICE_ID
 ```
 
-`--check` verändert keine Dateien, Konten oder PAM-Konfiguration und löst keinen Token ein. Für eigene Zertifikate `--ca-file /pfad/ca.pem` verwenden. Bei explizit gewünschtem unverschlüsseltem HTTP ist `--allow-http` erforderlich. Hilfe: `--help`.
+`--check` verändert keine Dateien, Konten oder PAM-Konfiguration und löst keinen Token ein. Für eigene Zertifikate `--ca-file /pfad/ca.pem` verwenden. HTTP ist standardmäßig erlaubt; `--allow-http` ist nicht mehr erforderlich. Hilfe: `--help`.
 
 **Update:** Neues Paket entpacken und `sudo sh scripts/install-linux.sh` erneut starten. Geräteschlüssel werden wiederverwendet, kein neuer Token nötig. Ein laufender Job wird beim Dienstneustart abgewartet; das kann bis zu 30 Minuten dauern.
 

@@ -25,8 +25,8 @@ func TestServerValidation(t *testing.T) {
 	for _, server := range []string{"http://127.0.0.1:8080", "http://192.168.1.10:8080", "http://directory.example:8080", "http://[2001:db8::1]:8080"} {
 		t.Run(server, func(t *testing.T) {
 			config := Config{Server: server, DeviceID: "0123456789abcdef0123456789abcdef"}
-			if _, err := New(config); err == nil {
-				t.Fatal("HTTP accepted without explicit opt-in")
+			if _, err := New(config); err != nil {
+				t.Fatal("HTTP rejected by default", err)
 			}
 			config.AllowHTTP = true
 			if _, err := New(config); err != nil {

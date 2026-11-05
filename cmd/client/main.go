@@ -23,15 +23,15 @@ func main() {
 	}
 }
 func run() error {
-	server := flag.String("server", "https://localhost:8443", "server URL")
-	local := flag.Bool("allow-http", false, "allow unencrypted HTTP for local development")
+	server := flag.String("server", "http://localhost:8080", "server URL")
+	_ = flag.Bool("allow-http", true, "deprecated: HTTP is allowed by default")
 	flag.Parse()
 	u, err := url.Parse(*server)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
 		return fmt.Errorf("invalid server URL")
 	}
-	if u.Scheme != "https" && !(u.Scheme == "http" && *local) {
-		return fmt.Errorf("HTTPS required; use --allow-http only for local development")
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return fmt.Errorf("server URL must use HTTP or HTTPS")
 	}
 	a := flag.Args()
 	if len(a) == 0 {

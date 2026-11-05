@@ -47,13 +47,13 @@ docker compose up -d --build
 
 Die Datei wird als Compose-Secret eingebunden. Beim ersten Start entsteht der Benutzer `admin`; spätere Starts verwenden die vorhandene Datenbank. Ändern des Bootstrap-Secrets ändert kein gespeichertes Passwort. Das Volume `directory-data` enthält die Daten und muss gesichert werden. Nur eine Serverinstanz pro Datei betreiben. Daten sind nicht verschlüsselt; Dateisystem und Backups entsprechend schützen.
 
-HTTP ist standardmäßig nur an den Loopback-Port des Hosts gebunden. Für Netzwerkzugriff TLS verwenden: entweder einen HTTPS-Reverse-Proxy oder `LINAD_TLS_CERT` und `LINAD_TLS_KEY` im Server setzen und die Dateien schreibgeschützt in den Container einbinden. Ports und Client-URL passend konfigurieren. Keine Passwörter oder Token über unverschlüsseltes HTTP im Netzwerk senden.
+Der Docker-Server ist standardmäßig an den lokalen Port 8080 gebunden; für Netzwerkzugriff kann die Portfreigabe auf `8080:8080` geändert werden. Alle Clients und Installer akzeptieren HTTP ohne Zusatzoption. HTTPS ist weiterhin über einen Reverse-Proxy oder `LINAD_TLS_CERT` und `LINAD_TLS_KEY` möglich; die Zertifikatsprüfung bleibt aktiv. HTTP überträgt Anmeldedaten unverschlüsselt.
 
 Alternativ lokal `LINAD_ADMIN_PASSWORD` setzen und `go run ./cmd/server` starten. Standard: `127.0.0.1:8080`, Daten: `data/directory.json`. `LINAD_DATA` und `LINAD_LISTEN` überschreiben diese Werte. `GET /healthz` liefert `{"status":"ok"}`.
 
 ## Webverwaltung
 
-Nach dem Start die Serveradresse im Browser öffnen: lokal `http://127.0.0.1:8080/`, im Netzwerk ausschließlich die eingerichtete HTTPS-Adresse. Als `admin` anmelden. Die Oberfläche bietet Benutzer- und Gruppenlisten, Anlegen/Löschen, Mitgliedschaften, Sperren/Entsperren, Passwortzurücksetzen und Geräte-Anmelderegeln. Geräte können ausschließlich Administratoren registrieren, ändern und entfernen. Im Kopfbereich ist die Darstellung „System“, „Hell“ oder „Dunkel“ wählbar; nur diese nicht geheime Einstellung wird lokal gespeichert. Normale Benutzer können ihr eigenes Passwort ändern. Administratoren können weitere Administratoren ernennen oder deren Rolle entziehen. Die Rolle verleiht auch sudo auf freigegebenen und aktualisierten Linux-Geräten. Der Bootstrap-Administrator kann weder gesperrt, gelöscht noch zum normalen Benutzer herabgestuft werden. Unter „Meine Gruppen“ sehen alle Benutzer ihre eigenen Gruppenmitgliedschaften.
+Nach dem Start die Serveradresse im Browser öffnen: lokal `http://127.0.0.1:8080/`, im Netzwerk `http://SERVER-IP:8080/` oder die eingerichtete HTTPS-Adresse. Als `admin` anmelden. Die Oberfläche bietet Benutzer- und Gruppenlisten, Anlegen/Löschen, Mitgliedschaften, Sperren/Entsperren, Passwortzurücksetzen und Geräte-Anmelderegeln. Geräte können ausschließlich Administratoren registrieren, ändern und entfernen. Im Kopfbereich ist die Darstellung „System“, „Hell“ oder „Dunkel“ wählbar; nur diese nicht geheime Einstellung wird lokal gespeichert. Normale Benutzer können ihr eigenes Passwort ändern. Administratoren können weitere Administratoren ernennen oder deren Rolle entziehen. Die Rolle verleiht auch sudo auf freigegebenen und aktualisierten Linux-Geräten. Der Bootstrap-Administrator kann weder gesperrt, gelöscht noch zum normalen Benutzer herabgestuft werden. Unter „Meine Gruppen“ sehen alle Benutzer ihre eigenen Gruppenmitgliedschaften.
 
 Sitzungstoken bleiben ausschließlich im Arbeitsspeicher des geöffneten Tabs; ein Neuladen der Seite erfordert eine neue Anmeldung. Passwörter oder Token werden nicht in Local Storage geschrieben. Der Server liefert die Oberfläche selbst aus; kein Node.js oder separater Frontend-Dienst ist nötig. Bestehende Datenbestände werden weiterverwendet, vorhandene Konten sind standardmäßig aktiv.
 
@@ -64,7 +64,7 @@ Eine Kontensperre oder Passwortänderung beendet alle Sitzungen des Kontos sofor
 Die GUI-Datei starten (unter Linux gegebenenfalls `chmod +x dist/linad-client-gui-linux-amd64`). Sie öffnet automatisch den Standardbrowser. Unter Linux wird `xdg-open` benötigt; unter Windows wird der Standardbrowser über das Betriebssystem gestartet. Es handelt sich um einen eigenständigen Client mit lokal bereitgestellter Browseroberfläche, nicht um ein natives Desktop-Fenster.
 
 1. Serveradresse eingeben, z. B. `https://directory.example:8443`.
-2. Nur für lokale Tests HTTP ausdrücklich erlauben.
+2. HTTP oder HTTPS verwenden; eine zusätzliche HTTP-Freigabe ist nicht nötig.
 3. Mit einem Verzeichnisbenutzer anmelden.
 4. Als Administrator Benutzer/Gruppen und Gerätezugriff verwalten; als normaler Benutzer das eigene Passwort ändern und freigegebene Geräte sehen.
 
@@ -76,7 +76,7 @@ Optionale Startparameter:
 
 ```sh
 dist/linad-client-gui-linux-amd64 --server https://directory.example:8443
-dist/linad-client-gui-linux-amd64 --server http://127.0.0.1:8080 --allow-http
+dist/linad-client-gui-linux-amd64 --server http://127.0.0.1:8080
 ```
 
 Für automatisierte Tests `--no-browser` verwenden. Der Linux-Prozess gibt seine private Startadresse aus. Der Windows-GUI-Build hat kein Konsolenfenster; die Serverauswahl ist vollständig in der Oberfläche möglich.
@@ -88,10 +88,10 @@ Linux: `dist/linad-client-linux-amd64`; Windows: `dist/linad-client-windows-amd6
 Setze `LINAD_PASSWORD` sicher auf das Administratorpasswort, dann:
 
 ```sh
-dist/linad-client-linux-amd64 --server http://127.0.0.1:8080 --allow-http login admin
+dist/linad-client-linux-amd64 --server http://127.0.0.1:8080 login admin
 ```
 
-Die Antwort enthält einen geheimen Bearer-Token und das Ablaufdatum. Den Token für weitere Aufrufe in `LINAD_TOKEN` setzen; er wird nicht automatisch auf Datenträger gespeichert. Ausgabe nicht in öffentliche Logs übernehmen. Für HTTPS `--server https://directory.example:8443` verwenden und `--allow-http` weglassen. Der Client prüft die System-Zertifikatskette; eine private CA muss im Betriebssystem vertraut sein.
+Die Antwort enthält einen geheimen Bearer-Token und das Ablaufdatum. Den Token für weitere Aufrufe in `LINAD_TOKEN` setzen; er wird nicht automatisch auf Datenträger gespeichert. Ausgabe nicht in öffentliche Logs übernehmen. Für HTTPS `--server https://directory.example:8443` verwenden. Der Client prüft die System-Zertifikatskette; eine private CA muss im Betriebssystem vertraut sein.
 
 Weitere Befehle (Serverflags jeweils vor dem Befehl):
 

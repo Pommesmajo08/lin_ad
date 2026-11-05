@@ -20,12 +20,12 @@ sudo sh scripts/install-linux.sh \
   --device-id DEVICE_ID
 ```
 
-Der Installer fragt den Enrollment-Token ohne Echo ab. Für eine private CA zusätzlich `--ca-file /pfad/ca.pem` angeben. Das Zertifikat wird nach `/etc/linad-linux/ca.pem` kopiert; TLS- und Hostnamenprüfung bleiben aktiv. HTTP ist mit `--allow-http` auch für entfernte Server erlaubt. Ohne diesen Schalter bleibt HTTPS erforderlich. Bei HTTP werden Passwörter und Geräte-Schlüssel unverschlüsselt übertragen.
+Der Installer fragt den Enrollment-Token ohne Echo ab. Für eine private CA zusätzlich `--ca-file /pfad/ca.pem` angeben. Das Zertifikat wird nach `/etc/linad-linux/ca.pem` kopiert; TLS- und Hostnamenprüfung bleiben aktiv. HTTP ist standardmäßig auch für entfernte Server erlaubt. Die bisherige Option `--allow-http` bleibt zur Kompatibilität akzeptiert. Bei HTTP werden Passwörter und Geräte-Schlüssel unverschlüsselt übertragen.
 
 Beispiel für einen HTTP-Server im Netzwerk:
 
 ```sh
-sudo sh scripts/install-linux.sh --server http://192.168.1.10:8080 --device-id DEVICE_ID --allow-http
+sudo sh scripts/install-linux.sh --server http://192.168.1.10:8080 --device-id DEVICE_ID
 ```
 
 Der Installer legt Konfiguration (`/etc/linad-linux/client.json`, Root:0600), Registry (`/var/lib/linad-linux/accounts.json`, Root:0600), PAM-Profil und systemd-Dienst an. Er synchronisiert zuerst und aktiviert erst danach die PAM-Anbindung über `pam-auth-update`. Bestehende manuell angepasste PAM-Dateien werden nicht mit `--force` überschrieben; in diesem Fall meldet der Installer einen Fehler und den Pfad seiner Sicherung. `--no-pam` installiert zunächst nur Provisionierung und den separaten PAM-Diagnosedienst. `--no-start` ist für Image-Erstellung ohne laufendes systemd gedacht; beim späteren Boot `systemctl enable --now linad-linux` ausführen.

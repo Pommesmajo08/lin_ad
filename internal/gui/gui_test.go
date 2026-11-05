@@ -43,11 +43,11 @@ func TestProxyAuthorizationAndServerSelection(t *testing.T) {
 	}
 	request("GET", "/", "", a.host, "", 200)
 	request("GET", "/client/info", "", a.host, "", 403)
-	request("POST", "/client/connect", "", a.host, `{"server":"`+upstream.URL+`","allow_http":true}`, 403)
+	request("POST", "/client/connect", "", a.host, `{"server":"`+upstream.URL+`"}`, 403)
 	request("GET", "/v1/me", a.secret, "attacker.example", "", 403)
 	request("GET", "/v1/me", a.secret, a.host, "", 503)
-	request("POST", "/client/connect", a.secret, a.host, `{"server":"`+upstream.URL+`"}`, 400)
-	request("POST", "/client/connect", a.secret, a.host, `{"server":"`+upstream.URL+`","allow_http":true}`, 200)
+	request("POST", "/client/connect", a.secret, a.host, `{"server":"ftp://example.com"}`, 400)
+	request("POST", "/client/connect", a.secret, a.host, `{"server":"`+upstream.URL+`"}`, 200)
 	if b := request("GET", "/client/info", a.secret, a.host, "", 200); !strings.Contains(b, upstream.URL) {
 		t.Fatal("selected server missing")
 	}
@@ -61,10 +61,13 @@ func TestProxyAuthorizationAndServerSelection(t *testing.T) {
 	<-closed
 }
 func TestTargetValidation(t *testing.T) {
-	for _, raw := range []string{"file:///etc/passwd", "https://user:password@example.com", "https://example.com/path", "https://example.com?q=secret", "https://example.com/#fragment", "http://example.com", "ftp://example.com", "not-a-url"} {
+	for _, raw := range []string{"file:///etc/passwd", "https://user:password@example.com", "https://example.com/path", "https://example.com?q=secret", "https://example.com/#fragment", "ftp://example.com", "not-a-url"} {
 		if _, err := validateTarget(raw, false); err == nil {
 			t.Error("invalid URL accepted", raw)
 		}
+	}
+	if _, err := validateTarget("http://example.com:8080", false); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := validateTarget("https://example.com:8443", false); err != nil {
 		t.Fatal(err)

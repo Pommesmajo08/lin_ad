@@ -22,7 +22,7 @@ Offline/mit bereits geladenem Paket `linad-windows-agent-amd64.zip`: vollständi
 powershell -NoProfile -File .\scripts\install-windows-agent.ps1 -Server https://directory.example -DeviceID DEVICE_ID
 ```
 
-Der Token wird nur in der verdeckten Terminal-Abfrage eingegeben. Er wird weder als Kommandozeilenparameter noch in der Konfiguration gespeichert. Nach der Einlösung speichert der Agent einen eigenen Geräteschlüssel. Für eine private Zertifizierungsstelle kann `-CaFile C:\Pfad\ca.pem` angegeben werden; TLS-/Hostnamenprüfung bleiben aktiv. Der Installer kopiert die CA in den geschützten Zustandsordner. HTTP nur ausdrücklich über `-AllowHttp`; dabei werden Geräteschlüssel und Ergebnisse unverschlüsselt übertragen.
+Der Token wird nur in der verdeckten Terminal-Abfrage eingegeben. Er wird weder als Kommandozeilenparameter noch in der Konfiguration gespeichert. Nach der Einlösung speichert der Agent einen eigenen Geräteschlüssel. Für eine private Zertifizierungsstelle kann `-CaFile C:\Pfad\ca.pem` angegeben werden; TLS-/Hostnamenprüfung bleiben aktiv. Der Installer kopiert die CA in den geschützten Zustandsordner. HTTP ist ohne `-AllowHttp` erlaubt; dabei werden Geräteschlüssel und Ergebnisse unverschlüsselt übertragen.
 
 `-Check` prüft Voraussetzungen und Serververbindung ohne Änderungen oder Token-Einlösung; bei bestehenden Installationen wird zusätzlich der gespeicherte Geräteschlüssel geprüft. `-NoStart` installiert den Dienst, startet ihn aber noch nicht. Lokale oder unternehmensweite PowerShell-Richtlinien werden nicht umgangen; insbesondere können GPO-Signaturanforderungen eigene Skripte blockieren.
 

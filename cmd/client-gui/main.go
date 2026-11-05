@@ -16,7 +16,7 @@ import (
 
 func main() {
 	server := flag.String("server", "", "Verzeichnisserver (auch in der GUI wählbar)")
-	allowHTTP := flag.Bool("allow-http", false, "HTTP für lokale Entwicklung erlauben")
+	allowHTTP := flag.Bool("allow-http", true, "Veraltet: HTTP ist standardmäßig erlaubt")
 	noBrowser := flag.Bool("no-browser", false, "Browser nicht automatisch öffnen")
 	flag.Parse()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

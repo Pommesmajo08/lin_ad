@@ -31,7 +31,7 @@ try {
     $auth=@{Authorization=('Bearer '+(Api 'POST' '/v1/login' @{name='admin';password=$env:LINAD_ADMIN_PASSWORD}).token)}
     $device=Api 'POST' '/v1/devices' @{name='windows-ci';os='windows'}
     $enroll=Api 'POST' ("/v1/devices/"+$device.id+'/enrollment') $null
-    $enroll.enrollment_token | & (Join-Path $root 'dist\linad-windows-agent-amd64.exe') enroll --server $base --device-id $device.id --state-dir $state --allow-http
+    $enroll.enrollment_token | & (Join-Path $root 'dist\linad-windows-agent-amd64.exe') enroll --server $base --device-id $device.id --state-dir $state
     if($LASTEXITCODE){throw 'Agent enrollment failed'}
     & (Join-Path $root 'scripts\install-windows-agent.ps1') -StateDir $state -InstallDir $bin
     $deadline=[DateTime]::UtcNow.AddSeconds(45)

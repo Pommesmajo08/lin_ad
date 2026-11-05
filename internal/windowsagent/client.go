@@ -41,8 +41,8 @@ func New(c Config) (*Client, error) {
 	if e != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || !Hex(c.DeviceID, 32) {
 		return nil, errors.New("invalid server URL/device ID")
 	}
-	if u.Scheme != "https" && (u.Scheme != "http" || !c.AllowHTTP) {
-		return nil, errors.New("HTTPS required; HTTP needs --allow-http")
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return nil, errors.New("server URL must use HTTP or HTTPS")
 	}
 	var roots *x509.CertPool
 	if c.CAFile != "" {

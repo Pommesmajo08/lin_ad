@@ -15,6 +15,17 @@ import (
 type transportFunc func(*http.Request) (*http.Response, error)
 
 func (f transportFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+func TestHTTPServerAcceptedByDefault(t *testing.T) {
+	for _, server := range []string{"http://127.0.0.1:8080", "http://192.168.1.10:8080", "http://directory.example:8080", "https://directory.example"} {
+		if _, e := New(Config{Server: server, DeviceID: strings.Repeat("a", 32)}); e != nil {
+			t.Fatalf("default connection rejected for %s: %v", server, e)
+		}
+	}
+	if _, e := New(Config{Server: "ftp://directory.example", DeviceID: strings.Repeat("a", 32)}); e == nil {
+		t.Fatal("unsupported URL scheme accepted")
+	}
+}
+
 func TestWorkerProtocolDurabilityAndInterruptedRun(t *testing.T) {
 	s, e := directory.New(filepath.Join(t.TempDir(), "server.json"), "initial-admin-password")
 	if e != nil {

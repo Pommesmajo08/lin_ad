@@ -55,7 +55,6 @@ with tempfile.TemporaryDirectory() as tmp:
             page.goto(launch_url)
             page.locator('#connection-panel').wait_for(state='visible')
             page.locator('#connection-form [name=server]').fill(BASE)
-            page.locator('#connection-form [name=allow_http]').check()
             page.get_by_role('button', name='Verbinden', exact=True).click()
             page.get_by_text('Server ausgewählt. Bitte anmelden.', exact=True).wait_for()
             page.locator('#login-form [name=name]').fill('admin')
@@ -84,7 +83,7 @@ with tempfile.TemporaryDirectory() as tmp:
             page.locator('#enrollment-panel').wait_for(state='visible')
             assert len(page.locator('#enrollment-token').input_value()) == 64
             command=page.locator('#enrollment-command').input_value()
-            assert BASE in command and '--device-id' in command and '--allow-http' in command
+            assert BASE in command and '--device-id' in command and '--allow-http' not in command
             assert page.locator('#enrollment-token').input_value() not in command
             page.get_by_role('button', name='Token verbergen', exact=True).click()
             assert page.locator('#enrollment-token').input_value() == ''
@@ -97,7 +96,7 @@ with tempfile.TemporaryDirectory() as tmp:
             cli_env = dict(env, LINAD_TOKEN=token)
             def cli(*args):
                 return json.loads(subprocess.check_output([
-                    str(ROOT / 'dist/linad-client-linux-amd64'), '--server', BASE, '--allow-http', *args
+                    str(ROOT / 'dist/linad-client-linux-amd64'), '--server', BASE, *args
                 ], env=cli_env, text=True))
             devices = cli('devices')
             assert devices[0]['name'] == 'gui-workstation'

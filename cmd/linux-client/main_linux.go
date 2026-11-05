@@ -57,10 +57,10 @@ func run() error {
 	config := flags.String("config", linuxclient.DefaultConfig, "root-owned configuration file")
 	state := flags.String("state", linuxclient.DefaultState, "root-owned account registry")
 	jobsState := flags.String("jobs-state", linuxclient.DefaultJobsState, "root-owned job journal")
-	server := flags.String("server", "", "HTTPS directory server")
+	server := flags.String("server", "", "HTTP or HTTPS directory server")
 	deviceID := flags.String("device-id", "", "administrator-created device ID")
 	caFile := flags.String("ca-file", "", "optional CA PEM file")
-	allowHTTP := flags.Bool("allow-http", false, "explicitly allow unencrypted HTTP")
+	allowHTTP := flags.Bool("allow-http", true, "deprecated: HTTP is allowed by default")
 	replace := flags.Bool("replace", false, "replace credentials for the same device and server")
 	interval := flags.Duration("interval", 30*time.Second, "synchronization interval")
 	if err := flags.Parse(os.Args[2:]); err != nil {

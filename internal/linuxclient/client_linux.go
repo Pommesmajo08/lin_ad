@@ -48,11 +48,10 @@ func validateConfig(c Config) error {
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
 		return errors.New("invalid server URL")
 	}
-	if u.Scheme != "https" {
-		if u.Scheme != "http" || !c.AllowHTTP {
-			return errors.New("HTTPS required; use --allow-http to explicitly allow HTTP")
-		}
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return errors.New("server URL must use HTTP or HTTPS")
 	}
+
 	if len(c.DeviceID) != 32 || strings.Trim(c.DeviceID, "0123456789abcdef") != "" {
 		return errors.New("invalid device ID")
 	}

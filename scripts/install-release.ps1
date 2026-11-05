@@ -7,7 +7,7 @@ param(
     [string]$Server,
     [string]$DeviceID,
     [string]$CaFile,
-    [switch]$AllowHttp,
+    [switch]$AllowHttp = $true,
     [switch]$NoStart,
     [switch]$Check,
     [switch]$Reenroll,

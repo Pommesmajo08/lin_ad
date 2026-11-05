@@ -8,7 +8,7 @@ linad_pam=yes
 linad_server=
 linad_device=
 linad_ca=
-linad_http=no
+linad_http=yes
 linad_check=no
 linad_stage=Vorabprüfung
 fail() { printf '\nFehler: %s\n' "$*" >&2; exit 1; }
@@ -18,10 +18,10 @@ Linad Linux-Geräteinstallation (Debian/Ubuntu)
   sudo sh scripts/install-linux.sh             Geführte Einrichtung / Update
   sudo sh scripts/install-linux.sh --check     Nur Vorabprüfung, keine Änderungen
 Optionen:
-  --server URL       Verzeichnisserver (HTTPS)
+  --server URL       Verzeichnisserver (HTTP oder HTTPS)
   --device-id ID     Geräte-ID aus Geräte → Linux provisionieren
   --ca-file DATEI    Optionales CA-Zertifikat
-  --allow-http       Unverschlüsseltes HTTP ausdrücklich erlauben
+  --allow-http       Kompatibilitätsoption; HTTP ist standardmäßig erlaubt
   --no-start         Image-Provisionierung ohne laufendes systemd
   --no-pam           Gemeinsames Anmeldeprofil noch nicht aktivieren
   --help             Diese Hilfe
@@ -66,14 +66,14 @@ if [ -e /etc/linad-linux/client.json ]; then
 else
  echo 'Modus: Ersteinrichtung. Geräte-ID und Token findest du in der Webverwaltung unter Geräte → Linux provisionieren.'
  if [ -t 0 ]; then
-  if [ -z "$linad_server" ]; then printf 'Serveradresse (https://…): '; IFS= read -r linad_server; fi
+  if [ -z "$linad_server" ]; then printf 'Serveradresse (http://… oder https://…): '; IFS= read -r linad_server; fi
   if [ -z "$linad_device" ]; then printf 'Geräte-ID: '; IFS= read -r linad_device; fi
   if [ -z "$linad_ca" ]; then printf 'Eigene CA-Datei (optional, Enter für Systemzertifikate): '; IFS= read -r linad_ca; fi
  fi
  [ -n "$linad_server" ] && [ -n "$linad_device" ] || fail '--server und --device-id fehlen. Interaktiv ohne Pipe starten oder beide Optionen angeben.'
  set -- check-connection --server "$linad_server" --device-id "$linad_device"
  if [ -n "$linad_ca" ]; then [ -r "$linad_ca" ] || fail 'CA-Datei nicht lesbar.'; set -- "$@" --ca-file "$linad_ca"; fi
- if [ "$linad_http" = yes ]; then echo 'Hinweis: HTTP überträgt Passwörter und Geräteschlüssel unverschlüsselt.'; set -- "$@" --allow-http; fi
+ if [ "$linad_http" = yes ]; then set -- "$@" --allow-http; fi
  "$linad_binary" "$@"
 fi
 if command -v dpkg >/dev/null; then

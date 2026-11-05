@@ -66,8 +66,8 @@ func validateTarget(raw string, allowHTTP bool) (*url.URL, error) {
 	if err != nil || u.Host == "" || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") || u.Opaque != "" {
 		return nil, errors.New("Bitte eine Serveradresse ohne Benutzerinfo, Pfad oder Query angeben")
 	}
-	if u.Scheme != "https" && !(u.Scheme == "http" && allowHTTP) {
-		return nil, errors.New("HTTPS erforderlich; HTTP nur ausdrücklich für lokale Entwicklung erlauben")
+	if u.Scheme != "https" && u.Scheme != "http" {
+		return nil, errors.New("Serveradresse muss HTTP oder HTTPS verwenden")
 	}
 	u.Path = ""
 	return u, nil

@@ -4,7 +4,7 @@ param(
     [string]$Server,
     [string]$DeviceID,
     [string]$CaFile,
-    [switch]$AllowHttp,
+    [switch]$AllowHttp = $true,
     [switch]$NoStart,
     [switch]$Check,
     [switch]$Reenroll,
@@ -120,11 +120,11 @@ if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw 'Agent fehlt. 
 if (Test-Path -LiteralPath $config) {
     if (-not $Reenroll) { Invoke-Agent @('doctor','--state-dir',$StateDir) }
 } else {
-    if (-not $Server) { $Server=Read-Host 'Linad-Serveradresse (https://...)' }
+    if (-not $Server) { $Server=Read-Host 'Linad-Serveradresse (http://... oder https://...)' }
     if (-not $DeviceID) { $DeviceID=Read-Host 'Windows-Geräte-ID aus der Webverwaltung' }
     if (-not $Server -or -not $DeviceID) { throw 'Serveradresse und Geräte-ID sind erforderlich.' }
     $uri = [Uri]$Server
-    if (($uri.Scheme -ne 'https' -and -not ($uri.Scheme -eq 'http' -and $AllowHttp)) -or $DeviceID -notmatch '^[a-f0-9]{32}$') { throw 'HTTPS-Adresse und gültige Geräte-ID erforderlich; HTTP nur mit -AllowHttp.' }
+    if (($uri.Scheme -notin @('http','https')) -or $DeviceID -notmatch '^[a-f0-9]{32}$') { throw 'HTTP- oder HTTPS-Adresse und gültige Geräte-ID erforderlich.' }
     $connection = @('check-connection','--server',$Server,'--device-id',$DeviceID)
     if ($CaFile) { $connection += @('--ca-file',$CaFile) }
     if ($AllowHttp) { $connection += '--allow-http' }
