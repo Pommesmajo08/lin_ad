@@ -17,16 +17,33 @@ import (
 func privateTestDir(t *testing.T) string {
 	t.Helper()
 	d := t.TempDir()
-	for _, args := range [][]string{{d, "/inheritance:r", "/grant:r", "*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F"}, {d, "/setowner", "*S-1-5-32-544"}} {
-		if out, e := exec.Command("icacls.exe", args...).CombinedOutput(); e != nil {
-			t.Fatalf("ACL setup: %v %s", e, out)
-		}
+	// TempDir can have explicit runner ACEs. Removing inheritance alone does
+	// not remove those; replace the descriptor just as the installer does.
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", `
+$ErrorActionPreference='Stop'
+$acl=New-Object Security.AccessControl.DirectorySecurity
+$acl.SetSecurityDescriptorSddlForm('O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)')
+Set-Acl -LiteralPath $env:LINAD_TEST_PRIVATE_PATH -AclObject $acl
+`)
+	cmd.Env = append(os.Environ(), "LINAD_TEST_PRIVATE_PATH="+d)
+	if out, e := cmd.CombinedOutput(); e != nil {
+		t.Fatalf("ACL setup: %v %s", e, out)
 	}
 	if e := VerifyPrivate(d); e != nil {
 		t.Fatal(e)
 	}
 	return d
 }
+func TestPrivateDirectoryRejectsAdditionalPrincipal(t *testing.T) {
+	d := privateTestDir(t)
+	if out, e := exec.Command("icacls.exe", d, "/grant", "*S-1-1-0:(OI)(CI)R").CombinedOutput(); e != nil {
+		t.Fatalf("add untrusted ACE: %v %s", e, out)
+	}
+	if e := VerifyPrivate(d); e == nil || !strings.Contains(e.Error(), "non-administrator access") {
+		t.Fatalf("additional principal was not rejected: %v", e)
+	}
+}
+
 func TestNativePowerShellAndIntegrity(t *testing.T) {
 	d := privateTestDir(t)
 	_, source, hash, e := directory.NormalizeJobScript("powershell", "Write-Output 'Grüße'; exit 7\n")
